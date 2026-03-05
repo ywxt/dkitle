@@ -8,13 +8,24 @@
   "content_scripts": [
     {
       "matches": ["*://*.youtube.com/*"],
-      "js": ["providers/youtube-intercept.js"],
+      "js": ["providers/intercept-base.js", "providers/youtube-intercept.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
       "matches": ["*://*.youtube.com/*"],
-      "js": ["providers/youtube.js"],
+      "js": ["providers/provider-base.js", "providers/youtube.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.bilibili.com/*"],
+      "js": ["providers/intercept-base.js", "providers/bilibili-intercept.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://*.bilibili.com/*"],
+      "js": ["providers/provider-base.js", "providers/bilibili.js"],
       "run_at": "document_idle"
     }
   ],
