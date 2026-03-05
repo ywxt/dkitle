@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "dkitle",
+  "version": "1.0.0",
+  "description": "Extract subtitles from video sites and send to dkitle desktop app",
+  "permissions": [],
+  "host_permissions": ["http://localhost:9877/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["providers/youtube-intercept.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["providers/youtube.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "dkitle"
+  },
+  "icons": {}
+}

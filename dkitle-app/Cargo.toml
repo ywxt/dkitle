@@ -1,0 +1,30 @@
+[package]
+name = "dkitle-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# WebSocket server
+axum = { version = "0.8", features = ["ws"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# GUI - iced with dual renderer (wgpu GPU + tiny-skia CPU fallback)
+# Cross-platform: Windows, Linux X11, Wayland, macOS
+iced = { version = "0.13", default-features = false, features = [
+    "wgpu",
+    "tiny-skia",
+    "tokio",
+] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Tower for HTTP service
+tower-http = { version = "0.6", features = ["cors"] }

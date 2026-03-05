@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 280px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      color: #333;
+    }
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #f5f5f5;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.connected { background: #4caf50; }
+    .dot.disconnected { background: #f44336; }
+    .dot.reconnecting { background: #ff9800; animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .status-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .label { color: #333; font-weight: 500; }
+    .hint {
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
+    }
+    .info {
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #fff3e0;
+      font-size: 12px;
+      color: #e65100;
+      display: none;
+    }
+    .info.visible { display: block; }
+  </style>
+</head>
+<body>
+  <h2>dkitle</h2>
+  <div class="status">
+    <span id="dot" class="dot disconnected"></span>
+    <div class="status-text">
+      <span id="label" class="label">Connecting...</span>
+      <span id="hint" class="hint"></span>
+    </div>
+  </div>
+  <div id="info" class="info">
+    请先启动 dkitle-app 桌面应用<br>
+    <code style="font-size:11px">cd dkitle-app && cargo run</code>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

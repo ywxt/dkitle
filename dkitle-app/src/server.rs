@@ -1,0 +1,77 @@
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use std::sync::mpsc;
+use tower_http::cors::CorsLayer;
+use tracing::{error, info};
+
+use crate::subtitle::SubtitleMessage;
+
+/// Start the WebSocket server on the given port.
+/// Subtitle messages are forwarded to the UI through the provided sender.
+pub async fn run_server(port: u16, subtitle_tx: mpsc::Sender<SubtitleMessage>) {
+    let app = Router::new()
+        .route("/health", get(health_handler))
+        .route("/ws", get(move |ws| ws_handler(ws, subtitle_tx)))
+        .layer(CorsLayer::permissive());
+
+    let addr = format!("127.0.0.1:{}", port);
+    info!("dkitle server listening on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .expect("Failed to bind server address");
+
+    axum::serve(listener, app)
+        .await
+        .expect("Server error");
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    subtitle_tx: mpsc::Sender<SubtitleMessage>,
+) -> impl IntoResponse {
+    info!("New WebSocket connection");
+    ws.on_upgrade(move |socket| handle_socket(socket, subtitle_tx))
+}
+
+async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::Sender<SubtitleMessage>) {
+    info!("WebSocket client connected");
+
+    while let Some(msg) = socket.recv().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                match serde_json::from_str::<SubtitleMessage>(&text) {
+                    Ok(subtitle) => {
+                        info!("[{}] {}", subtitle.provider, subtitle.text);
+                        if subtitle_tx.send(subtitle).is_err() {
+                            error!("UI channel closed, stopping connection");
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to parse subtitle message: {}", e);
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                info!("WebSocket client disconnected");
+                break;
+            }
+            Err(e) => {
+                error!("WebSocket error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    info!("WebSocket connection closed");
+}
+
+async fn health_handler() -> &'static str {
+    "ok"
+}
