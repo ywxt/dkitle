@@ -94,12 +94,7 @@ impl SubtitleApp {
             Message::Tick => {
                 // Drain all pending subtitle messages
                 while let Ok(msg) = self.subtitle_rx.try_recv() {
-                    let source_id = if msg.source_id.is_empty() {
-                        // Fallback for legacy extension without source_id
-                        format!("__legacy__{}", msg.provider)
-                    } else {
-                        msg.source_id.clone()
-                    };
+                    let source_id = msg.source_id.clone();
 
                     let source = self
                         .sources

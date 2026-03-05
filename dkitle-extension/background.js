@@ -1,8 +1,8 @@
 // dkitle background service worker
 // Manages WebSocket connection to dkitle-app with health probe + exponential backoff
 
-const HEALTH_URL = "http://localhost:9877/health";
-const WS_URL = "ws://localhost:9877/ws";
+const HEALTH_URL = "http://127.0.0.1:9877/health";
+const WS_URL = "ws://127.0.0.1:9877/ws";
 let ws = null;
 let reconnectTimer = null;
 let connected = false;
@@ -145,7 +145,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "subtitle") {
     sendSubtitle({
       provider: message.provider,
-      source_id: message.sourceId || "",
+      source_id: message.sourceId,
       tab_title: sender.tab?.title || "",
       text: message.text,
       timestamp: Date.now(),

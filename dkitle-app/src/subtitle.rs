@@ -27,9 +27,7 @@ pub struct SubtitleMessage {
     /// Unix timestamp in milliseconds when this subtitle was captured
     pub timestamp: u64,
     /// Unique identifier for the source (one per browser tab)
-    #[serde(default)]
     pub source_id: String,
     /// Browser tab title for display purposes
-    #[serde(default)]
     pub tab_title: String,
 }

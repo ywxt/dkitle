@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Extract subtitles from video sites and send to dkitle desktop app",
   "permissions": [],
-  "host_permissions": ["http://localhost:9877/*"],
+  "host_permissions": ["http://127.0.0.1:9877/*"],
   "content_scripts": [
     {
       "matches": ["*://*.youtube.com/*"],
