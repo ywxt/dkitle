@@ -5,6 +5,7 @@ use axum::{
     Router,
 };
 use std::sync::mpsc;
+use tokio::sync::watch;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
@@ -12,7 +13,12 @@ use crate::subtitle::SubtitleMessage;
 
 /// Start the WebSocket server on the given port.
 /// Subtitle messages are forwarded to the UI through the provided sender.
-pub async fn run_server(port: u16, subtitle_tx: mpsc::Sender<SubtitleMessage>) {
+/// The server shuts down gracefully when `shutdown_rx` receives `true`.
+pub async fn run_server(
+    port: u16,
+    subtitle_tx: mpsc::Sender<SubtitleMessage>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ws", get(move |ws| ws_handler(ws, subtitle_tx)))
@@ -26,8 +32,15 @@ pub async fn run_server(port: u16, subtitle_tx: mpsc::Sender<SubtitleMessage>) {
         .expect("Failed to bind server address");
 
     axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            // Wait until shutdown signal is sent
+            let _ = shutdown_rx.wait_for(|&v| v).await;
+            info!("Server received shutdown signal");
+        })
         .await
         .expect("Server error");
+
+    info!("Server stopped");
 }
 
 async fn ws_handler(
@@ -43,20 +56,18 @@ async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::Sender<Subtitle
 
     while let Some(msg) = socket.recv().await {
         match msg {
-            Ok(Message::Text(text)) => {
-                match serde_json::from_str::<SubtitleMessage>(&text) {
-                    Ok(subtitle) => {
-                        info!("[{}] {}", subtitle.provider, subtitle.text);
-                        if subtitle_tx.send(subtitle).is_err() {
-                            error!("UI channel closed, stopping connection");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to parse subtitle message: {}", e);
+            Ok(Message::Text(text)) => match serde_json::from_str::<SubtitleMessage>(&text) {
+                Ok(subtitle) => {
+                    info!("[{}] {}", subtitle.provider, subtitle.text);
+                    if subtitle_tx.send(subtitle).is_err() {
+                        error!("UI channel closed, stopping connection");
+                        break;
                     }
                 }
-            }
+                Err(e) => {
+                    error!("Failed to parse subtitle message: {}", e);
+                }
+            },
             Ok(Message::Close(_)) => {
                 info!("WebSocket client disconnected");
                 break;

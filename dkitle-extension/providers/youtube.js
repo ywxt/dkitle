@@ -6,6 +6,7 @@
   "use strict";
 
   const PROVIDER = "youtube";
+  const SOURCE_ID = crypto.randomUUID();
   const CAPTION_SELECTOR = ".ytp-caption-segment";
 
   let lastText = "";
@@ -20,6 +21,7 @@
     chrome.runtime.sendMessage({
       type: "subtitle",
       provider: PROVIDER,
+      sourceId: SOURCE_ID,
       text: text,
     }).catch(() => {});
   }

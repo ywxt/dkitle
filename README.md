@@ -4,7 +4,7 @@
 
 ## 项目结构
 
-```
+```text
 dkitle/
 ├── dkitle-extension/    # Chrome 扩展 - 从网页提取字幕
 │   ├── manifest.json
@@ -33,6 +33,7 @@ cargo run
 ```
 
 应用启动后会：
+
 - 在 `ws://localhost:9877/ws` 开启 WebSocket 服务器
 - 显示一个置顶的字幕窗口
 
@@ -56,6 +57,7 @@ cargo run
 
 1. 编写 content script 监听对应网站的字幕元素
 2. 通过 `chrome.runtime.sendMessage` 发送统一格式的消息：
+
    ```js
    chrome.runtime.sendMessage({
      type: "subtitle",
@@ -63,7 +65,9 @@ cargo run
      text: "字幕内容"
    });
    ```
+
 3. 在 `manifest.json` 的 `content_scripts` 中注册：
+
    ```json
    {
      "matches": ["*://*.bilibili.com/*"],
@@ -75,6 +79,7 @@ cargo run
 ## 跨平台支持
 
 桌面应用使用 `eframe`/`egui` 构建，支持：
+
 - **Windows** (原生)
 - **Linux X11** (原生)
 - **Linux Wayland** (通过 winit Wayland 后端)

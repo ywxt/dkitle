@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
   <style>
@@ -56,20 +56,48 @@
       display: none;
     }
     .info.visible { display: block; }
+    .actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+    }
+    .actions button {
+      padding: 5px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #retryBtn {
+      background: #4caf50;
+      color: #fff;
+      display: none;
+    }
+    #retryBtn:hover { background: #43a047; }
+    #stopBtn {
+      background: #f44336;
+      color: #fff;
+      display: none;
+    }
+    #stopBtn:hover { background: #e53935; }
   </style>
 </head>
 <body>
-  <h2>dkitle</h2>
+  <h2 id="titleText">dkitle</h2>
   <div class="status">
     <span id="dot" class="dot disconnected"></span>
     <div class="status-text">
-      <span id="label" class="label">Connecting...</span>
+      <span id="label" class="label"></span>
       <span id="hint" class="hint"></span>
     </div>
   </div>
   <div id="info" class="info">
-    请先启动 dkitle-app 桌面应用<br>
-    <code style="font-size:11px">cd dkitle-app && cargo run</code>
+    <span id="infoText"></span>
+  </div>
+  <div class="actions">
+    <button id="retryBtn"></button>
+    <button id="stopBtn"></button>
   </div>
   <script src="popup.js"></script>
 </body>

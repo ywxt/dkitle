@@ -8,6 +8,7 @@ let reconnectTimer = null;
 let connected = false;
 let reconnectAttempts = 0;
 let nextReconnectMs = 0;
+let stopped = false; // user manually stopped auto-reconnect
 
 const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 30000;
@@ -29,7 +30,9 @@ async function connect() {
     }
   } catch (_) {
     // Server not available — schedule reconnect silently
-    scheduleReconnect();
+    if (!stopped) {
+      scheduleReconnect();
+    }
     return;
   }
 
@@ -42,6 +45,7 @@ async function connect() {
       connected = true;
       reconnectAttempts = 0;
       nextReconnectMs = 0;
+      stopped = false;
       clearReconnectTimer();
       notifyStatusChange();
     };
@@ -53,7 +57,9 @@ async function connect() {
       connected = false;
       ws = null;
       notifyStatusChange();
-      scheduleReconnect();
+      if (!stopped) {
+        scheduleReconnect();
+      }
     };
 
     ws.onerror = () => {
@@ -67,7 +73,9 @@ async function connect() {
   } catch (e) {
     console.warn("[dkitle] Cannot connect to dkitle-app");
     connected = false;
-    scheduleReconnect();
+    if (!stopped) {
+      scheduleReconnect();
+    }
   }
 }
 
@@ -91,6 +99,24 @@ function clearReconnectTimer() {
   }
 }
 
+// Manual retry: reset state and connect immediately
+function retryNow() {
+  stopped = false;
+  reconnectAttempts = 0;
+  nextReconnectMs = 0;
+  clearReconnectTimer();
+  notifyStatusChange();
+  connect();
+}
+
+// Stop auto-reconnect
+function stopRetry() {
+  stopped = true;
+  clearReconnectTimer();
+  nextReconnectMs = 0;
+  notifyStatusChange();
+}
+
 function sendSubtitle(data) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
@@ -110,20 +136,29 @@ function getStatusInfo() {
     connected,
     reconnectAttempts,
     nextReconnectMs,
+    stopped,
   };
 }
 
-// Listen for messages from content scripts (providers)
+// Listen for messages from content scripts (providers) and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "subtitle") {
     sendSubtitle({
       provider: message.provider,
+      source_id: message.sourceId || "",
+      tab_title: sender.tab?.title || "",
       text: message.text,
       timestamp: Date.now(),
     });
     sendResponse({ ok: true });
   } else if (message.type === "getStatus") {
     sendResponse(getStatusInfo());
+  } else if (message.type === "retryNow") {
+    retryNow();
+    sendResponse({ ok: true });
+  } else if (message.type === "stopRetry") {
+    stopRetry();
+    sendResponse({ ok: true });
   }
   return false;
 });
