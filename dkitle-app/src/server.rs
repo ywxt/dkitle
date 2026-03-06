@@ -4,8 +4,7 @@ use axum::{
     routing::get,
     Router,
 };
-use std::sync::mpsc;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
@@ -16,7 +15,7 @@ use crate::subtitle::SubtitleMessage;
 /// The server shuts down gracefully when `shutdown_rx` receives `true`.
 pub async fn run_server(
     port: u16,
-    subtitle_tx: mpsc::Sender<SubtitleMessage>,
+    subtitle_tx: mpsc::UnboundedSender<SubtitleMessage>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     let app = Router::new()
@@ -45,20 +44,47 @@ pub async fn run_server(
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    subtitle_tx: mpsc::Sender<SubtitleMessage>,
+    subtitle_tx: mpsc::UnboundedSender<SubtitleMessage>,
 ) -> impl IntoResponse {
     info!("New WebSocket connection");
     ws.on_upgrade(move |socket| handle_socket(socket, subtitle_tx))
 }
 
-async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::Sender<SubtitleMessage>) {
+async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::UnboundedSender<SubtitleMessage>) {
     info!("WebSocket client connected");
 
     while let Some(msg) = socket.recv().await {
         match msg {
             Ok(Message::Text(text)) => match serde_json::from_str::<SubtitleMessage>(&text) {
                 Ok(subtitle) => {
-                    info!("[{}] {}", subtitle.provider, subtitle.text);
+                    match &subtitle {
+                        SubtitleMessage::Cues {
+                            provider,
+                            source_id,
+                            cues,
+                            ..
+                        } => {
+                            info!(
+                                "[{}] Received {} cues for source {}",
+                                provider,
+                                cues.len(),
+                                source_id
+                            );
+                        }
+                        SubtitleMessage::Sync {
+                            source_id,
+                            video_time_ms,
+                            playing,
+                            ..
+                        } => {
+                            tracing::trace!(
+                                "Sync source={} time={}ms playing={}",
+                                source_id,
+                                video_time_ms,
+                                playing
+                            );
+                        }
+                    }
                     if subtitle_tx.send(subtitle).is_err() {
                         error!("UI channel closed, stopping connection");
                         break;

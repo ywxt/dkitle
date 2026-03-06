@@ -6,28 +6,46 @@ use std::fmt;
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     YouTube,
-    // Future: Bilibili, Netflix, etc.
+    Bilibili,
 }
 
 impl fmt::Display for Provider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Provider::YouTube => write!(f, "YouTube"),
+            Provider::Bilibili => write!(f, "Bilibili"),
         }
     }
 }
 
-/// A subtitle message received from a browser extension provider.
+/// A single subtitle cue with start/end timing and text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubtitleMessage {
-    /// The provider that generated this subtitle
-    pub provider: Provider,
-    /// The subtitle text content
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleCue {
+    pub start_ms: f64,
+    pub end_ms: f64,
     pub text: String,
-    /// Unix timestamp in milliseconds when this subtitle was captured
-    pub timestamp: u64,
-    /// Unique identifier for the source (one per browser tab)
-    pub source_id: String,
-    /// Browser tab title for display purposes
-    pub tab_title: String,
+}
+
+/// Messages received from the browser extension via WebSocket.
+///
+/// Two message types:
+/// - `Cues`: All subtitle cues for a video, sent once when intercepted.
+/// - `Sync`: Video playback time sync, sent on timeupdate/pause/play/seeked.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SubtitleMessage {
+    Cues {
+        provider: Provider,
+        source_id: String,
+        tab_title: String,
+        cues: Vec<SubtitleCue>,
+    },
+    Sync {
+        source_id: String,
+        video_time_ms: f64,
+        playing: bool,
+        /// Sender's Date.now() timestamp in milliseconds
+        timestamp: u64,
+    },
 }

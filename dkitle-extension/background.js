@@ -117,7 +117,7 @@ function stopRetry() {
   notifyStatusChange();
 }
 
-function sendSubtitle(data) {
+function wsSend(data) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
   }
@@ -142,13 +142,24 @@ function getStatusInfo() {
 
 // Listen for messages from content scripts (providers) and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "subtitle") {
-    sendSubtitle({
+  if (message.type === "cues") {
+    // Forward all subtitle cues to the app
+    wsSend({
+      type: "cues",
       provider: message.provider,
       source_id: message.sourceId,
       tab_title: sender.tab?.title || "",
-      text: message.text,
-      timestamp: Date.now(),
+      cues: message.cues,
+    });
+    sendResponse({ ok: true });
+  } else if (message.type === "sync") {
+    // Forward time sync to the app
+    wsSend({
+      type: "sync",
+      source_id: message.sourceId,
+      video_time_ms: message.videoTimeMs,
+      playing: message.playing,
+      timestamp: message.timestamp,
     });
     sendResponse({ ok: true });
   } else if (message.type === "getStatus") {

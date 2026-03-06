@@ -1,6 +1,6 @@
 // dkitle subtitle provider base (ISOLATED world / content script)
-// Shared runtime for all video site providers
-// Usage: window.__dkitleCreateProvider({ provider, captionSelector, extractCaption?, messageType? })
+// Receives intercepted cues and forwards to background.
+// Syncs video playback time via timeupdate/pause/play/seeked events.
 
 (function () {
   "use strict";
@@ -8,52 +8,51 @@
   window.__dkitleCreateProvider = function (config) {
     const {
       provider,
-      captionSelector,
-      extractCaption,
       messageType = "dkitle-subtitle-data",
     } = config;
 
     const SOURCE_ID = crypto.randomUUID();
-    let lastText = "";
-    let subtitleCues = []; // [{startMs, endMs, text}]
-    let usingInterceptedData = false;
 
-    // --- Send subtitle to background ---
-
-    function sendSubtitle(text) {
-      if (!text || text === lastText) return;
-      lastText = text;
-      chrome.runtime.sendMessage({
-        type: "subtitle",
-        provider: provider,
-        sourceId: SOURCE_ID,
-        text: text,
-      }).catch(() => {});
-    }
-
-    // --- Method 1: Intercepted data + video timeupdate ---
+    // --- Receive intercepted cues and forward to background ---
 
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
-      if (event.data?.type === messageType && event.data?.provider === provider) {
-        subtitleCues = event.data.cues || [];
-        usingInterceptedData = true;
-        console.log(
-          `[dkitle] [${provider}] Received ${subtitleCues.length} subtitle cues from interceptor`
-        );
+      if (
+        event.data?.type === messageType &&
+        event.data?.provider === provider
+      ) {
+        const cues = event.data.cues || [];
+        if (cues.length > 0) {
+          chrome.runtime
+            .sendMessage({
+              type: "cues",
+              provider: provider,
+              sourceId: SOURCE_ID,
+              cues: cues,
+            })
+            .catch(() => {});
+          console.log(
+            `[dkitle] [${provider}] Forwarded ${cues.length} cues to background`
+          );
+        }
       }
     });
 
-    function findCurrentCue(timeMs) {
-      for (const cue of subtitleCues) {
-        if (timeMs >= cue.startMs && timeMs < cue.endMs) {
-          return cue;
-        }
-      }
-      return null;
+    // --- Video time sync ---
+
+    function sendSync(video) {
+      chrome.runtime
+        .sendMessage({
+          type: "sync",
+          sourceId: SOURCE_ID,
+          videoTimeMs: video.currentTime * 1000,
+          playing: !video.paused,
+          timestamp: Date.now(),
+        })
+        .catch(() => {});
     }
 
-    function setupVideoTimeUpdate() {
+    function setupVideoSync() {
       let videoEl = null;
 
       function bindToVideo() {
@@ -62,74 +61,22 @@
 
         videoEl = video;
 
-        video.addEventListener("timeupdate", () => {
-          if (!usingInterceptedData || subtitleCues.length === 0) return;
+        video.addEventListener("timeupdate", () => sendSync(video));
+        video.addEventListener("play", () => sendSync(video));
+        video.addEventListener("pause", () => sendSync(video));
+        video.addEventListener("seeked", () => sendSync(video));
 
-          const timeMs = video.currentTime * 1000;
-          const cue = findCurrentCue(timeMs);
-          if (cue) {
-            sendSubtitle(cue.text);
-          } else {
-            if (lastText !== "") {
-              lastText = "";
-            }
-          }
-        });
-
-        console.log(`[dkitle] [${provider}] Bound to video timeupdate`);
+        console.log(`[dkitle] [${provider}] Bound to video sync events`);
       }
 
       bindToVideo();
       setInterval(bindToVideo, 2000);
     }
 
-    // --- Method 2: DOM observation fallback ---
-
-    function extractCaptionText() {
-      if (typeof extractCaption === "function") {
-        return extractCaption();
-      }
-      if (!captionSelector) return "";
-      const segments = document.querySelectorAll(captionSelector);
-      if (segments.length === 0) return "";
-      return Array.from(segments)
-        .map((el) => el.textContent.trim())
-        .filter(Boolean)
-        .join(" ");
-    }
-
-    function startDomObserver() {
-      if (!captionSelector) return;
-
-      const observer = new MutationObserver(() => {
-        if (usingInterceptedData && subtitleCues.length > 0) return;
-        const text = extractCaptionText();
-        sendSubtitle(text);
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
-    }
-
-    function startFallbackPoll() {
-      if (!captionSelector && typeof extractCaption !== "function") return;
-
-      setInterval(() => {
-        if (usingInterceptedData && subtitleCues.length > 0) return;
-        const text = extractCaptionText();
-        sendSubtitle(text);
-      }, 500);
-    }
-
     // --- Init ---
 
     function init() {
-      setupVideoTimeUpdate();
-      startDomObserver();
-      startFallbackPoll();
+      setupVideoSync();
       console.log(`[dkitle] [${provider}] Subtitle provider initialized`);
     }
 

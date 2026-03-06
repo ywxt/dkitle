@@ -2,15 +2,14 @@ use iced::widget::{button, column, container, horizontal_rule, row, scrollable, 
 use iced::window;
 use iced::{Element, Length, Subscription, Task, Theme};
 use std::collections::HashMap;
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::subtitle::{Provider, SubtitleMessage};
+use crate::subtitle::{Provider, SubtitleCue, SubtitleMessage};
 
 /// Messages for the iced application
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// Tick to poll subtitle channel and clean up stale sources
+    /// High-frequency tick (~16ms) to update subtitle display based on estimated video time
     Tick,
     /// Open a subtitle overlay window for a source
     OpenSubtitleWindow(String),
@@ -23,9 +22,62 @@ pub enum Message {
 /// Represents a subtitle source (one per browser tab)
 struct SubtitleSource {
     provider: Provider,
-    text: String,
     tab_title: String,
-    last_update: Instant,
+    /// All subtitle cues for this source (sorted by start_ms)
+    cues: Vec<SubtitleCue>,
+    /// Last synced video time in milliseconds
+    sync_video_time_ms: f64,
+    /// Local Instant when we received the last sync
+    sync_instant: Instant,
+    /// Whether the video is currently playing
+    playing: bool,
+    /// Currently displayed subtitle text (cached to avoid unnecessary redraws)
+    current_text: String,
+}
+
+impl SubtitleSource {
+    /// Estimate the current video playback time in milliseconds.
+    fn estimated_time_ms(&self) -> f64 {
+        if self.playing {
+            let elapsed = self.sync_instant.elapsed().as_secs_f64() * 1000.0;
+            self.sync_video_time_ms + elapsed
+        } else {
+            self.sync_video_time_ms
+        }
+    }
+
+    /// Find the subtitle cue active at the given time using binary search.
+    fn find_cue_at(&self, time_ms: f64) -> Option<&SubtitleCue> {
+        // Binary search for the last cue whose start_ms <= time_ms
+        let idx = self
+            .cues
+            .partition_point(|cue| cue.start_ms <= time_ms);
+        if idx == 0 {
+            return None;
+        }
+        let cue = &self.cues[idx - 1];
+        if time_ms < cue.end_ms {
+            Some(cue)
+        } else {
+            None
+        }
+    }
+
+    /// Update the current displayed text based on estimated time.
+    /// Returns true if text changed.
+    fn update_current_text(&mut self) -> bool {
+        let time_ms = self.estimated_time_ms();
+        let new_text = match self.find_cue_at(time_ms) {
+            Some(cue) => cue.text.clone(),
+            None => String::new(),
+        };
+        if new_text != self.current_text {
+            self.current_text = new_text;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// The main subtitle application with multi-window support.
@@ -34,7 +86,7 @@ struct SubtitleSource {
 /// - Manager window: lists all subtitle sources, each with an "Open" button
 /// - Subtitle windows: always-on-top overlay windows, one per source
 pub struct SubtitleApp {
-    subtitle_rx: mpsc::Receiver<SubtitleMessage>,
+    subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
     /// ID of the manager (main) window
     main_window_id: window::Id,
     /// All known subtitle sources: source_id → SubtitleSource
@@ -45,11 +97,12 @@ pub struct SubtitleApp {
     font_sizes: HashMap<window::Id, f32>,
 }
 
-const SOURCE_INACTIVE_SECS: u64 = 30;
 const DEFAULT_FONT_SIZE: f32 = 28.0;
 
 impl SubtitleApp {
-    pub fn new(subtitle_rx: mpsc::Receiver<SubtitleMessage>) -> (Self, Task<Message>) {
+    pub fn new(
+        subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
+    ) -> (Self, Task<Message>) {
         let (main_id, open_task) = window::open(manager_window_settings());
         let app = Self {
             subtitle_rx,
@@ -92,25 +145,14 @@ impl SubtitleApp {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tick => {
-                // Drain all pending subtitle messages
+                // Drain all pending subtitle messages from the channel
                 while let Ok(msg) = self.subtitle_rx.try_recv() {
-                    let source_id = msg.source_id.clone();
+                    self.handle_subtitle_message(msg);
+                }
 
-                    let source = self
-                        .sources
-                        .entry(source_id)
-                        .or_insert_with(|| SubtitleSource {
-                            provider: msg.provider.clone(),
-                            text: String::new(),
-                            tab_title: String::new(),
-                            last_update: Instant::now(),
-                        });
-                    source.text = msg.text;
-                    source.provider = msg.provider;
-                    if !msg.tab_title.is_empty() {
-                        source.tab_title = msg.tab_title;
-                    }
-                    source.last_update = Instant::now();
+                // Update current subtitle text for all sources based on estimated time
+                for source in self.sources.values_mut() {
+                    source.update_current_text();
                 }
             }
 
@@ -144,6 +186,68 @@ impl SubtitleApp {
         Task::none()
     }
 
+    fn handle_subtitle_message(&mut self, msg: SubtitleMessage) {
+        match msg {
+            SubtitleMessage::Cues {
+                provider,
+                source_id,
+                tab_title,
+                mut cues,
+            } => {
+                // Sort cues by start time for binary search
+                cues.sort_by(|a, b| a.start_ms.partial_cmp(&b.start_ms).unwrap());
+
+                let source = self.sources.entry(source_id).or_insert_with(|| {
+                    SubtitleSource {
+                        provider: provider.clone(),
+                        tab_title: String::new(),
+                        cues: Vec::new(),
+                        sync_video_time_ms: 0.0,
+                        sync_instant: Instant::now(),
+                        playing: false,
+                        current_text: String::new(),
+                    }
+                });
+                source.cues = cues;
+                source.provider = provider;
+                if !tab_title.is_empty() {
+                    source.tab_title = tab_title;
+                }
+            }
+            SubtitleMessage::Sync {
+                source_id,
+                video_time_ms,
+                playing,
+                timestamp,
+            } => {
+                if let Some(source) = self.sources.get_mut(&source_id) {
+                    // Compensate for transmission delay:
+                    // The sender recorded Date.now() as `timestamp`.
+                    // We compare with our own system time to estimate transit delay.
+                    let now_epoch_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let transit_delay_ms = now_epoch_ms.saturating_sub(timestamp) as f64;
+
+                    // Adjust synced time forward by transit delay if playing
+                    let adjusted_time = if playing {
+                        video_time_ms + transit_delay_ms
+                    } else {
+                        video_time_ms
+                    };
+
+                    source.sync_video_time_ms = adjusted_time;
+                    source.sync_instant = Instant::now();
+                    source.playing = playing;
+
+                    // Immediately update displayed text on sync
+                    source.update_current_text();
+                }
+            }
+        }
+    }
+
     // ── view (per window) ──────────────────────────────
 
     pub fn view(&self, window_id: window::Id) -> Element<'_, Message> {
@@ -174,17 +278,10 @@ impl SubtitleApp {
                 .into();
         }
 
-        // Sort sources: most recently updated first
-        let mut sorted: Vec<(&String, &SubtitleSource)> = self.sources.iter().collect();
-        sorted.sort_by(|a, b| b.1.last_update.cmp(&a.1.last_update));
-
-        let now = Instant::now();
         let mut list = column![].spacing(4);
 
-        for (source_id, source) in &sorted {
-            let elapsed = now.duration_since(source.last_update).as_secs();
-            let is_active = elapsed < SOURCE_INACTIVE_SECS;
-            let is_open = self.subtitle_windows.values().any(|sid| sid == *source_id);
+        for (source_id, source) in &self.sources {
+            let is_open = self.subtitle_windows.values().any(|sid| sid == source_id);
 
             // Provider + tab title label
             let label = if source.tab_title.is_empty() {
@@ -192,17 +289,27 @@ impl SubtitleApp {
             } else {
                 format!("📺 {} — {}", source.provider, source.tab_title)
             };
-            let label_color = if is_active {
-                iced::Color::from_rgb(0.15, 0.15, 0.15)
+
+            // Status info
+            let status = if source.cues.is_empty() {
+                "No cues".to_string()
             } else {
-                iced::Color::from_rgb(0.65, 0.65, 0.65)
+                let playing_str = if source.playing { "▶" } else { "⏸" };
+                format!(
+                    "{} {} cues",
+                    playing_str,
+                    source.cues.len()
+                )
             };
 
             // Subtitle text preview (truncated)
-            let preview = truncate_str(&source.text, 50);
+            let preview = truncate_str(&source.current_text, 50);
 
             let info_col = column![
-                text(label).size(13).color(label_color),
+                text(label).size(13),
+                text(status)
+                    .size(11)
+                    .color(iced::Color::from_rgb(0.4, 0.4, 0.4)),
                 text(preview)
                     .size(11)
                     .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
@@ -215,7 +322,7 @@ impl SubtitleApp {
                 button(text("Opened").size(11))
             } else {
                 button(text("Open").size(11))
-                    .on_press(Message::OpenSubtitleWindow((*source_id).clone()))
+                    .on_press(Message::OpenSubtitleWindow(source_id.clone()))
             };
 
             let entry = row![info_col, btn]
@@ -258,7 +365,7 @@ impl SubtitleApp {
                     } else {
                         format!("📺 {} — {}", source.provider, source.tab_title)
                     };
-                    (label, source.text.as_str())
+                    (label, source.current_text.as_str())
                 } else {
                     (String::from("📺"), "Waiting...")
                 }
@@ -306,7 +413,8 @@ impl SubtitleApp {
     // ── subscription ───────────────────────────────────
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let tick = iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick);
+        // High-frequency tick for smooth subtitle updates (~60fps)
+        let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
 
         Subscription::batch([tick, window::close_events().map(Message::WindowClosed)])
     }

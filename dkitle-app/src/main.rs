@@ -2,7 +2,6 @@ mod server;
 mod subtitle;
 mod ui;
 
-use std::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -23,8 +22,8 @@ fn main() -> iced::Result {
         .init();
     info!("Starting dkitle-app");
 
-    // Create channel for subtitle messages: server -> UI
-    let (subtitle_tx, subtitle_rx) = mpsc::channel();
+    // Create channel for subtitle messages: server -> UI (tokio unbounded)
+    let (subtitle_tx, subtitle_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Create shutdown signal for the server
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
