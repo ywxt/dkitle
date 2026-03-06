@@ -10,8 +10,8 @@
     const clean = (text || "").trim();
     if (!clean) return null;
     return {
-      startMs: Math.max(0, Number(startSec || 0) * 1000),
-      endMs: Math.max(0, Number(endSec || 0) * 1000),
+      start_ms: Math.max(0, Number(startSec || 0) * 1000),
+      end_ms: Math.max(0, Number(endSec || 0) * 1000),
       text: clean,
     };
   }
@@ -43,7 +43,7 @@
       }
     }
 
-    return cues.filter((cue) => cue.endMs > cue.startMs);
+    return cues.filter((cue) => cue.end_ms > cue.start_ms);
   }
 
   function register() {

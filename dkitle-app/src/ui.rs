@@ -31,6 +31,8 @@ struct SubtitleSource {
     sync_instant: Instant,
     /// Whether the video is currently playing
     playing: bool,
+    /// Video playback rate (e.g. 0.5, 1.0, 1.5, 2.0)
+    playback_rate: f64,
     /// Currently displayed subtitle text (cached to avoid unnecessary redraws)
     current_text: String,
 }
@@ -40,7 +42,7 @@ impl SubtitleSource {
     fn estimated_time_ms(&self) -> f64 {
         if self.playing {
             let elapsed = self.sync_instant.elapsed().as_secs_f64() * 1000.0;
-            self.sync_video_time_ms + elapsed
+            self.sync_video_time_ms + elapsed * self.playback_rate
         } else {
             self.sync_video_time_ms
         }
@@ -205,6 +207,7 @@ impl SubtitleApp {
                         sync_video_time_ms: 0.0,
                         sync_instant: Instant::now(),
                         playing: false,
+                        playback_rate: 1.0,
                         current_text: String::new(),
                     }
                 });
@@ -218,6 +221,7 @@ impl SubtitleApp {
                 source_id,
                 video_time_ms,
                 playing,
+                playback_rate,
                 timestamp,
             } => {
                 if let Some(source) = self.sources.get_mut(&source_id) {
@@ -240,6 +244,7 @@ impl SubtitleApp {
                     source.sync_video_time_ms = adjusted_time;
                     source.sync_instant = Instant::now();
                     source.playing = playing;
+                    source.playback_rate = playback_rate;
 
                     // Immediately update displayed text on sync
                     source.update_current_text();

@@ -159,6 +159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       source_id: message.sourceId,
       video_time_ms: message.videoTimeMs,
       playing: message.playing,
+      playback_rate: message.playbackRate,
       timestamp: message.timestamp,
     });
     sendResponse({ ok: true });

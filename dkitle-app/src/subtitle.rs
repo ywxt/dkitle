@@ -20,7 +20,7 @@ impl fmt::Display for Provider {
 
 /// A single subtitle cue with start/end timing and text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct SubtitleCue {
     pub start_ms: f64,
     pub end_ms: f64,
@@ -33,7 +33,7 @@ pub struct SubtitleCue {
 /// - `Cues`: All subtitle cues for a video, sent once when intercepted.
 /// - `Sync`: Video playback time sync, sent on timeupdate/pause/play/seeked.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SubtitleMessage {
     Cues {
         provider: Provider,
@@ -45,6 +45,8 @@ pub enum SubtitleMessage {
         source_id: String,
         video_time_ms: f64,
         playing: bool,
+        /// Video playback rate (e.g. 0.5, 1.0, 1.5, 2.0)
+        playback_rate: f64,
         /// Sender's Date.now() timestamp in milliseconds
         timestamp: u64,
     },

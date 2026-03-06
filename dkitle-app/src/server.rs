@@ -75,13 +75,15 @@ async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::UnboundedSender
                             source_id,
                             video_time_ms,
                             playing,
+                            playback_rate,
                             ..
                         } => {
                             tracing::trace!(
-                                "Sync source={} time={}ms playing={}",
+                                "Sync source={} time={}ms playing={} rate={}x",
                                 source_id,
                                 video_time_ms,
-                                playing
+                                playing,
+                                playback_rate
                             );
                         }
                     }

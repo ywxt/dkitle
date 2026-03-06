@@ -47,6 +47,7 @@
           sourceId: SOURCE_ID,
           videoTimeMs: video.currentTime * 1000,
           playing: !video.paused,
+          playbackRate: video.playbackRate,
           timestamp: Date.now(),
         })
         .catch(() => {});
@@ -65,6 +66,7 @@
         video.addEventListener("play", () => sendSync(video));
         video.addEventListener("pause", () => sendSync(video));
         video.addEventListener("seeked", () => sendSync(video));
+        video.addEventListener("ratechange", () => sendSync(video));
 
         console.log(`[dkitle] [${provider}] Bound to video sync events`);
       }

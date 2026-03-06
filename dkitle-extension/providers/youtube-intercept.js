@@ -1,4 +1,4 @@
-// dkitle YouTube subtitle interceptor (MAIN world)
+i// dkitle YouTube subtitle interceptor (MAIN world)
 // Registers YouTube timedtext parser with the shared interceptor base
 
 (function () {
@@ -17,8 +17,8 @@
           .trim();
         if (!text) continue;
         cues.push({
-          startMs: event.tStartMs || 0,
-          endMs: (event.tStartMs || 0) + (event.dDurMs || 3000),
+          start_ms: event.tStartMs || 0,
+          end_ms: (event.tStartMs || 0) + (event.dDurMs || 3000),
           text,
         });
       }
