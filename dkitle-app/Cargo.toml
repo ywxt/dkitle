@@ -25,6 +25,9 @@ iced = { version = "0.14", default-features = false, features = [
     "tokio",
 ] }
 
+# Text measurement (same version as iced's transitive dep)
+cosmic-text = "0.15"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

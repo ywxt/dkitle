@@ -1,6 +1,8 @@
+use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping};
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::window;
 use iced::{Element, Length, Size, Subscription, Task, Theme};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -106,6 +108,9 @@ pub struct SubtitleApp {
     subtitle_windows: HashMap<window::Id, String>,
     /// Per-window tracked size
     window_sizes: HashMap<window::Id, Size>,
+    /// cosmic-text font system for accurate text measurement
+    /// Wrapped in RefCell so we can borrow mutably from &self in view()
+    font_system: RefCell<FontSystem>,
 }
 
 const DEFAULT_SUBTITLE_WIDTH: f32 = 600.0;
@@ -114,7 +119,7 @@ const MIN_FONT_SIZE: f32 = 10.0;
 const MAX_FONT_SIZE: f32 = 120.0;
 /// Padding on each side of the subtitle window
 const SUBTITLE_PADDING: f32 = 16.0;
-/// Vertical space used by provider label + spacing (no slider anymore)
+/// Vertical space used by provider label + spacing
 const SUBTITLE_OVERHEAD_HEIGHT: f32 = 30.0;
 
 impl SubtitleApp {
@@ -130,6 +135,7 @@ impl SubtitleApp {
             sources: HashMap::new(),
             subtitle_windows: HashMap::new(),
             window_sizes: HashMap::new(),
+            font_system: RefCell::new(FontSystem::new()),
         };
         (app, open_task.discard())
     }
@@ -145,10 +151,7 @@ impl SubtitleApp {
                 if source.tab_title.is_empty() {
                     return format!("{}", source.provider);
                 } else {
-                    return format!(
-                        "{} — {}",
-                        source.provider, source.tab_title
-                    );
+                    return format!("{} — {}", source.provider, source.tab_title);
                 }
             }
         }
@@ -429,8 +432,8 @@ impl SubtitleApp {
             .copied()
             .unwrap_or(Size::new(DEFAULT_SUBTITLE_WIDTH, DEFAULT_SUBTITLE_HEIGHT));
 
-        // Compute font size from window height, then shrink if text wraps
-        let effective_font_size = auto_font_size(subtitle_str, &window_size);
+        // Compute font size using cosmic-text for accurate measurement
+        let effective_font_size = auto_font_size(subtitle_str, &window_size, &self.font_system);
 
         let provider_label = text(provider_str)
             .size(12)
@@ -438,6 +441,7 @@ impl SubtitleApp {
 
         let subtitle_text = text(subtitle_str)
             .size(effective_font_size)
+            .line_height(1.2)
             .color(iced::Color::WHITE);
 
         let content = column![provider_label, subtitle_text]
@@ -513,98 +517,55 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// Estimate character width at a given font size.
-/// CJK characters are roughly square (width ≈ font_size),
-/// Latin/ASCII characters are roughly half-width (width ≈ font_size * 0.55).
-fn char_width(ch: char, font_size: f32) -> f32 {
-    if is_cjk(ch) {
-        font_size
-    } else {
-        font_size * 0.55
-    }
-}
+/// Measure the rendered height of text at a given font size and width using cosmic-text.
+fn measure_text_height(
+    font_system: &RefCell<FontSystem>,
+    s: &str,
+    font_size: f32,
+    available_width: f32,
+) -> f32 {
+    let line_height = font_size * 1.5;
+    let metrics = Metrics::new(font_size, line_height);
+    let mut fs = font_system.borrow_mut();
+    let mut buffer = Buffer::new(&mut fs, metrics);
+    buffer.set_size(&mut fs, Some(available_width), None);
+    buffer.set_text(&mut fs, s, &Attrs::new(), Shaping::Advanced, None);
+    buffer.shape_until_scroll(&mut fs, false);
 
-/// Check if a character is CJK (fullwidth).
-fn is_cjk(ch: char) -> bool {
-    let c = ch as u32;
-    // CJK Unified Ideographs, Hiragana, Katakana, Hangul, Fullwidth forms, etc.
-    matches!(c,
-        0x2E80..=0x9FFF |
-        0xF900..=0xFAFF |
-        0xFE30..=0xFE4F |
-        0xFF00..=0xFFEF |
-        0x20000..=0x2FA1F |
-        0x30000..=0x3134F |
-        0xAC00..=0xD7AF
-    )
-}
-
-/// Estimate the total display lines a text will need at a given font size,
-/// considering window width and character widths.
-fn estimate_display_lines(s: &str, font_size: f32, available_width: f32) -> f32 {
-    if s.is_empty() || available_width <= 0.0 || font_size <= 0.0 {
-        return 1.0;
-    }
-
-    let mut total_lines: f32 = 0.0;
-    for line in s.lines() {
-        if line.is_empty() {
-            total_lines += 1.0;
-            continue;
-        }
-        let mut line_width: f32 = 0.0;
-        let mut lines_for_segment: f32 = 1.0;
-        for ch in line.chars() {
-            let w = char_width(ch, font_size);
-            line_width += w;
-            if line_width > available_width {
-                lines_for_segment += 1.0;
-                line_width = w; // wrap: this char starts next line
-            }
-        }
-        total_lines += lines_for_segment;
-    }
-    total_lines
-}
-
-/// Check whether the text fits within the window at the given font size,
-/// accounting for line wrapping (smaller font → narrower chars → fewer wraps).
-fn text_fits(s: &str, font_size: f32, available_width: f32, available_height: f32) -> bool {
-    let line_height_factor = 1.35;
-    let lines = estimate_display_lines(s, font_size, available_width);
-    let needed_height = lines * font_size * line_height_factor;
-    needed_height <= available_height
+    // Sum up the height of all layout runs
+    let num_lines = buffer.layout_runs().count().max(1);
+    num_lines as f32 * line_height
 }
 
 /// Calculate the font size automatically from window size.
-/// Uses binary search to find the largest font size where the text
-/// (including line wrapping) fits within the available area.
-fn auto_font_size(s: &str, window_size: &Size) -> f32 {
+/// Uses cosmic-text for accurate text measurement and binary search
+/// to find the largest font size that fits within the available area.
+fn auto_font_size(s: &str, window_size: &Size, font_system: &RefCell<FontSystem>) -> f32 {
     let available_width = (window_size.width - SUBTITLE_PADDING * 2.0).max(50.0);
     let available_height = (window_size.height - SUBTITLE_OVERHEAD_HEIGHT).max(20.0);
 
     if s.is_empty() {
-        // No text: use max font that fits a single line
-        let line_height_factor = 1.35;
+        let line_height_factor = 1.5;
         return (available_height / line_height_factor).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
     }
 
-    // Binary search for the largest font size that fits
     let mut lo = MIN_FONT_SIZE;
     let mut hi = MAX_FONT_SIZE;
 
     // First check: does MIN_FONT_SIZE even fit?
-    if !text_fits(s, lo, available_width, available_height) {
+    let min_height = measure_text_height(font_system, s, lo, available_width);
+    if min_height > available_height {
         return MIN_FONT_SIZE;
     }
 
     // Binary search (precision ~0.5px)
     while (hi - lo) > 0.5 {
         let mid = (lo + hi) / 2.0;
-        if text_fits(s, mid, available_width, available_height) {
-            lo = mid; // fits → try larger
+        let height = measure_text_height(font_system, s, mid, available_width);
+        if height <= available_height {
+            lo = mid;
         } else {
-            hi = mid; // doesn't fit → try smaller
+            hi = mid;
         }
     }
 

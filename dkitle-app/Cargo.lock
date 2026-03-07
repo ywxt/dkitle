@@ -758,6 +758,7 @@ name = "dkitle-app"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "cosmic-text",
  "iced",
  "serde",
  "serde_json",
