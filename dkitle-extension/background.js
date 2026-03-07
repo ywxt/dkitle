@@ -10,6 +10,10 @@ let reconnectAttempts = 0;
 let nextReconnectMs = 0;
 let stopped = false; // user manually stopped auto-reconnect
 
+// Cache for resending data after reconnection
+const cachedCues = new Map();  // sourceId → cues payload object
+const cachedSync = new Map();  // sourceId → sync payload object
+
 const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 30000;
 
@@ -48,6 +52,7 @@ async function connect() {
       stopped = false;
       clearReconnectTimer();
       notifyStatusChange();
+      resendCachedData();
     };
 
     ws.onclose = () => {
@@ -124,6 +129,22 @@ function wsSend(data) {
   // Silently skip if not connected
 }
 
+// Resend all cached cues and sync data after reconnection
+function resendCachedData() {
+  let count = 0;
+  for (const data of cachedCues.values()) {
+    wsSend(data);
+    count++;
+  }
+  for (const data of cachedSync.values()) {
+    // Update timestamp to now so the server gets a fresh reference point
+    wsSend({ ...data, timestamp: Date.now() });
+  }
+  if (count > 0) {
+    console.log(`[dkitle] Resent cached data for ${count} source(s) after reconnection`);
+  }
+}
+
 function notifyStatusChange() {
   const status = getStatusInfo();
   chrome.runtime.sendMessage({ type: "status", ...status }).catch(() => {
@@ -143,25 +164,29 @@ function getStatusInfo() {
 // Listen for messages from content scripts (providers) and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "cues") {
-    // Forward all subtitle cues to the app
-    wsSend({
+    // Forward all subtitle cues to the app and cache for reconnection
+    const cuesPayload = {
       type: "cues",
       provider: message.provider,
       source_id: message.sourceId,
       tab_title: sender.tab?.title || "",
       cues: message.cues,
-    });
+    };
+    cachedCues.set(message.sourceId, cuesPayload);
+    wsSend(cuesPayload);
     sendResponse({ ok: true });
   } else if (message.type === "sync") {
-    // Forward time sync to the app
-    wsSend({
+    // Forward time sync to the app and cache for reconnection
+    const syncPayload = {
       type: "sync",
       source_id: message.sourceId,
       video_time_ms: message.videoTimeMs,
       playing: message.playing,
       playback_rate: message.playbackRate,
       timestamp: message.timestamp,
-    });
+    };
+    cachedSync.set(message.sourceId, syncPayload);
+    wsSend(syncPayload);
     sendResponse({ ok: true });
   } else if (message.type === "getStatus") {
     sendResponse(getStatusInfo());

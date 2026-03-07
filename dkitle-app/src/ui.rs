@@ -439,6 +439,7 @@ fn subtitle_window_settings() -> window::Settings {
         size: iced::Size::new(600.0, 140.0),
         level: window::Level::AlwaysOnTop,
         decorations: true,
+        resizable: false,
         ..Default::default()
     }
 }

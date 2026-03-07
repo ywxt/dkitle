@@ -1,4 +1,4 @@
-i// dkitle YouTube subtitle interceptor (MAIN world)
+// dkitle YouTube subtitle interceptor (MAIN world)
 // Registers YouTube timedtext parser with the shared interceptor base
 
 (function () {
