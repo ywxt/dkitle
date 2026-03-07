@@ -9,6 +9,7 @@
     const {
       provider,
       messageType = "dkitle-subtitle-data",
+      urlMatch = null,
     } = config;
 
     const SOURCE_ID = crypto.randomUUID();
@@ -57,6 +58,9 @@
       let videoEl = null;
 
       function bindToVideo() {
+        // Check URL pattern before registering (skip non-video pages like homepage)
+        if (urlMatch && !urlMatch.test(window.location.href)) return;
+
         const video = document.querySelector("video");
         if (!video || video === videoEl) return;
 

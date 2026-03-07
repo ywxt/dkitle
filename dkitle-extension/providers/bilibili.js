@@ -8,6 +8,7 @@
     if (typeof window.__dkitleCreateProvider === "function") {
       window.__dkitleCreateProvider({
         provider: "bilibili",
+        urlMatch: /bilibili\.com\/(video|bangumi\/play)/,
       });
     } else {
       console.warn("[dkitle] provider-base not loaded, retrying...");
