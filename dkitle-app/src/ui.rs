@@ -125,13 +125,13 @@ impl SubtitleApp {
         if let Some(source_id) = self.subtitle_windows.get(&window_id) {
             if let Some(source) = self.sources.get(source_id) {
                 if source.tab_title.is_empty() {
-                    return format!("dkitle - {}", source.provider);
+                    return format!("[dkitle-subtitle] {}", source.provider);
                 } else {
-                    return format!("dkitle - {}", source.tab_title);
+                    return format!("[dkitle-subtitle] {} — {}", source.provider, source.tab_title);
                 }
             }
         }
-        String::from("dkitle")
+        String::from("[dkitle-subtitle]")
     }
 
     pub fn theme(&self, window_id: window::Id) -> Theme {
@@ -433,13 +433,18 @@ fn manager_window_settings() -> window::Settings {
     }
 }
 
-/// Subtitle overlay window settings (always-on-top)
+/// Subtitle overlay window settings (always-on-top, with distinctive app_id for WM rules)
 fn subtitle_window_settings() -> window::Settings {
     window::Settings {
         size: iced::Size::new(600.0, 140.0),
         level: window::Level::AlwaysOnTop,
         decorations: true,
         resizable: false,
+        #[cfg(target_os = "linux")]
+        platform_specific: window::settings::PlatformSpecific {
+            application_id: String::from("dkitle-subtitle"),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }

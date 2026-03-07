@@ -112,9 +112,44 @@ cargo run
 
 ## 跨平台支持
 
-桌面应用使用 `eframe`/`egui` 构建，支持：
+桌面应用使用 iced 构建，支持：
 
 - **Windows** (原生)
 - **Linux X11** (原生)
 - **Linux Wayland** (通过 winit Wayland 后端)
 - **macOS** (原生)
+
+## Wayland 平铺窗口管理器配置
+
+在 Wayland 平铺窗口管理器（如 Sway、Hyprland）中，字幕窗口默认只会在当前工作区显示，且可能被平铺管理。
+
+字幕窗口的 `app_id` 为 `dkitle-subtitle`，窗口标题以 `[dkitle-subtitle]` 开头，可据此添加窗口规则实现浮动 + 全工作区置顶（sticky）。
+
+### Sway
+
+在 `~/.config/sway/config` 中添加：
+
+```
+for_window [app_id="dkitle-subtitle"] floating enable, sticky enable
+```
+
+### Hyprland
+
+在 `~/.config/hypr/hyprland.conf` 中添加：
+
+```
+windowrulev2 = float, class:^(dkitle-subtitle)$
+windowrulev2 = pin, class:^(dkitle-subtitle)$
+```
+
+### i3（X11）
+
+在 `~/.config/i3/config` 中添加：
+
+```
+for_window [title="^\[dkitle-subtitle\]"] floating enable, sticky enable
+```
+
+### 其他窗口管理器
+
+请根据你的 WM 文档，使用 `app_id`（Wayland）或窗口标题前缀 `[dkitle-subtitle]`（X11）匹配字幕窗口，并设置为浮动 + 固定（sticky/pin）。
