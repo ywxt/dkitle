@@ -29,7 +29,7 @@ dkitle/
         ├── main.rs       # 入口
         ├── server.rs     # WebSocket 服务器 (端口 9877)
         ├── subtitle.rs   # 字幕数据模型
-        └── ui.rs         # egui 置顶字幕窗口
+        └── ui.rs         # iced 置顶字幕窗口
 ```
 
 ## 使用方法
@@ -44,7 +44,7 @@ cargo run
 应用启动后会：
 
 - 在 `ws://localhost:9877/ws` 开启 WebSocket 服务器
-- 显示一个置顶的字幕窗口
+- 显示一个管理窗口，列出所有字幕来源
 
 ### 2. 安装浏览器扩展
 
@@ -85,7 +85,7 @@ cargo run
 1. 确保 dkitle-app 正在运行
 2. 打开 YouTube 或 bilibili 视频并开启字幕
 3. 字幕会自动同步显示在桌面置顶窗口中
-4. 可通过窗口中的滑块调整字体大小
+4. 字幕窗口可自由调整大小，字体会根据窗口尺寸自动适应
 
 ## Provider 架构说明
 
@@ -119,18 +119,25 @@ cargo run
 - **Linux Wayland** (通过 winit Wayland 后端)
 - **macOS** (原生)
 
+## 窗口标识
+
+| 窗口     | `app_id` (Wayland)            | 说明                 |
+| -------- | ----------------------------- | -------------------- |
+| 管理窗口 | `org.eu.ywxt.dkitle`          | 主窗口，列出字幕来源 |
+| 字幕窗口 | `org.eu.ywxt.dkitle.subtitle` | 置顶字幕叠加窗口     |
+
 ## Wayland 平铺窗口管理器配置
 
 在 Wayland 平铺窗口管理器（如 Sway、Hyprland）中，字幕窗口默认只会在当前工作区显示，且可能被平铺管理。
 
-字幕窗口的 `app_id` 为 `dkitle-subtitle`，窗口标题以 `[dkitle-subtitle]` 开头，可据此添加窗口规则实现浮动 + 全工作区置顶（sticky）。
+字幕窗口的 `app_id` 为 `org.eu.ywxt.dkitle.subtitle`，可据此添加窗口规则实现浮动 + 全工作区置顶（sticky）。
 
 ### Sway
 
 在 `~/.config/sway/config` 中添加：
 
 ```
-for_window [app_id="dkitle-subtitle"] floating enable, sticky enable
+for_window [app_id="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
 ```
 
 ### Hyprland
@@ -138,8 +145,8 @@ for_window [app_id="dkitle-subtitle"] floating enable, sticky enable
 在 `~/.config/hypr/hyprland.conf` 中添加：
 
 ```
-windowrulev2 = float, class:^(dkitle-subtitle)$
-windowrulev2 = pin, class:^(dkitle-subtitle)$
+windowrulev2 = float, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
+windowrulev2 = pin, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
 ```
 
 ### i3（X11）
@@ -147,9 +154,9 @@ windowrulev2 = pin, class:^(dkitle-subtitle)$
 在 `~/.config/i3/config` 中添加：
 
 ```
-for_window [title="^\[dkitle-subtitle\]"] floating enable, sticky enable
+for_window [class="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
 ```
 
 ### 其他窗口管理器
 
-请根据你的 WM 文档，使用 `app_id`（Wayland）或窗口标题前缀 `[dkitle-subtitle]`（X11）匹配字幕窗口，并设置为浮动 + 固定（sticky/pin）。
+请根据你的 WM 文档，使用 `app_id`（Wayland）或 WM_CLASS（X11）匹配字幕窗口 `org.eu.ywxt.dkitle.subtitle`，并设置为浮动 + 固定（sticky/pin）。

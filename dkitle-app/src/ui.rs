@@ -143,16 +143,16 @@ impl SubtitleApp {
         if let Some(source_id) = self.subtitle_windows.get(&window_id) {
             if let Some(source) = self.sources.get(source_id) {
                 if source.tab_title.is_empty() {
-                    return format!("[dkitle-subtitle] {}", source.provider);
+                    return format!("{}", source.provider);
                 } else {
                     return format!(
-                        "[dkitle-subtitle] {} — {}",
+                        "{} — {}",
                         source.provider, source.tab_title
                     );
                 }
             }
         }
-        String::from("[dkitle-subtitle]")
+        String::from("dkitle")
     }
 
     pub fn theme(&self, window_id: window::Id) -> Theme {
@@ -477,6 +477,11 @@ impl SubtitleApp {
 fn manager_window_settings() -> window::Settings {
     window::Settings {
         size: iced::Size::new(420.0, 340.0),
+        #[cfg(target_os = "linux")]
+        platform_specific: window::settings::PlatformSpecific {
+            application_id: String::from("org.eu.ywxt.dkitle"),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -490,7 +495,7 @@ fn subtitle_window_settings() -> window::Settings {
         resizable: true,
         #[cfg(target_os = "linux")]
         platform_specific: window::settings::PlatformSpecific {
-            application_id: String::from("dkitle-subtitle"),
+            application_id: String::from("org.eu.ywxt.dkitle.subtitle"),
             ..Default::default()
         },
         ..Default::default()
