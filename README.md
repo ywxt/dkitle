@@ -1,140 +1,142 @@
 # dkitle
 
-将浏览器中的视频字幕同步显示在桌面置顶窗口中。
+[中文](README.zh.md)
 
-## 项目结构
+Sync video subtitles from your browser to an always-on-top desktop overlay window.
+
+## Project Structure
 
 ```text
 dkitle/
-├── build.py                      # 扩展构建脚本（跨平台，Python 3）
+├── build.py                      # Extension build script (cross-platform, Python 3)
 ├── build.sh                      # Linux/macOS wrapper
 ├── build.bat                     # Windows wrapper
-├── dkitle-extension/    # 浏览器扩展 - 从网页提取字幕（支持 Chrome / Firefox）
+├── dkitle-extension/    # Browser extension — extracts subtitles from web pages (Chrome / Firefox)
 │   ├── manifest.json             # Chrome manifest (MV3)
 │   ├── manifest.firefox.json     # Firefox manifest (MV3, Gecko)
-│   ├── background.js             # WebSocket 连接管理
+│   ├── background.js             # WebSocket connection management
 │   ├── providers/
-│   │   ├── intercept-base.js      # 公共网络拦截基础层（MAIN world）
-│   │   ├── provider-base.js       # 公共 provider 基础层（ISOLATED world）
-│   │   ├── youtube-intercept.js   # YouTube 拦截器
+│   │   ├── intercept-base.js      # Shared network interceptor base (MAIN world)
+│   │   ├── provider-base.js       # Shared provider base (ISOLATED world)
+│   │   ├── youtube-intercept.js   # YouTube interceptor
 │   │   ├── youtube.js             # YouTube provider
-│   │   ├── bilibili-intercept.js  # bilibili 拦截器
-│   │   └── bilibili.js            # bilibili provider
+│   │   ├── bilibili-intercept.js  # Bilibili interceptor
+│   │   └── bilibili.js            # Bilibili provider
 │   ├── popup.html
 │   └── popup.js
 │
-└── dkitle-app/           # Rust 桌面应用 - 接收并置顶显示字幕
+└── dkitle-app/           # Rust desktop app — receives and displays subtitles in an overlay
     ├── Cargo.toml
     └── src/
-        ├── main.rs       # 入口
-        ├── server.rs     # WebSocket 服务器 (端口 9877)
-        ├── subtitle.rs   # 字幕数据模型
-        └── ui.rs         # iced 置顶字幕窗口
+        ├── main.rs       # Entry point
+        ├── server.rs     # WebSocket server (port 9877)
+        ├── subtitle.rs   # Subtitle data model
+        └── ui.rs         # iced always-on-top subtitle window
 ```
 
-## 使用方法
+## Usage
 
-### 1. 启动桌面应用
+### 1. Start the Desktop App
 
 ```bash
 cd dkitle-app
 cargo run
 ```
 
-应用启动后会：
+Once started, the app will:
 
-- 在 `ws://localhost:9877/ws` 开启 WebSocket 服务器
-- 显示一个管理窗口，列出所有字幕来源
+- Open a WebSocket server at `ws://localhost:9877/ws`
+- Show a manager window listing all subtitle sources
 
-### 2. 安装浏览器扩展
+### 2. Install the Browser Extension
 
 #### Chrome
 
-1. 打开 Chrome，访问 `chrome://extensions/`
-2. 启用 **开发者模式**
-3. 点击 **加载已解压的扩展程序**
-4. 选择 `dkitle-extension` 目录
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer Mode**
+3. Click **Load unpacked**
+4. Select the `dkitle-extension` directory
 
-#### Firefox（128+）
+#### Firefox (128+)
 
-1. 打开 Firefox，访问 `about:debugging#/runtime/this-firefox`
-2. 点击 **加载临时附加组件**
-3. 选择 `dkitle-extension/manifest.firefox.json`
+1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on**
+3. Select `dkitle-extension/manifest.firefox.json`
 
-> **打包发布**（在项目根目录，需要 Python 3）：
+> **Packaging for release** (from the project root, requires Python 3):
 >
 > ```bash
-> ./build.sh all             # Linux/macOS — 打包 Chrome + Firefox .zip
+> ./build.sh all             # Linux/macOS — build Chrome + Firefox .zip
 > build.bat all              # Windows
 > ```
 >
-> **调试开发**（输出未压缩目录，可直接在浏览器加载）：
+> **Development build** (outputs uncompressed directory, can be loaded directly in the browser):
 >
 > ```bash
-> ./build.sh all --dev       # Linux/macOS — 输出 build/chrome/ 和 build/firefox/
+> ./build.sh all --dev       # Linux/macOS — outputs build/chrome/ and build/firefox/
 > build.bat all --dev        # Windows
 > ```
 >
-> 也可直接调用：`python build.py chrome|firefox|all [--dev]`
+> You can also call directly: `python build.py chrome|firefox|all [--dev]`
 >
-> - 默认模式：构建产物为 `build/dkitle-chrome.zip` / `build/dkitle-firefox.zip`
-> - `--dev` 模式：构建产物为 `build/chrome/` / `build/firefox/` 目录，可直接加载
+> - Default mode: builds `build/dkitle-chrome.zip` / `build/dkitle-firefox.zip`
+> - `--dev` mode: builds `build/chrome/` / `build/firefox/` directories that can be loaded directly
 
-### 3. 使用
+### 3. Use
 
-1. 确保 dkitle-app 正在运行
-2. 打开 YouTube 或 bilibili 视频并开启字幕
-3. 字幕会自动同步显示在桌面置顶窗口中
-4. 字幕窗口可自由调整大小，字体会根据窗口尺寸自动适应
+1. Make sure dkitle-app is running
+2. Open a YouTube or Bilibili video with subtitles enabled
+3. Subtitles will automatically sync to the desktop overlay window
+4. The subtitle window is freely resizable — font size adapts automatically to the window dimensions
 
-## Provider 架构说明
+## Provider Architecture
 
-扩展已将 provider 能力抽象为两层公共接口：
+The extension abstracts provider capabilities into two shared layers:
 
-1. **intercept-base（MAIN world）**
-   - 统一 hook `fetch` 与 `XMLHttpRequest`
-   - 站点 intercept 仅需注册：URL 匹配 + 响应解析逻辑
-2. **provider-base（ISOLATED world）**
-   - 统一处理字幕发送、去重、`timeupdate` cue 对齐
-   - 内置 DOM 观察与轮询兜底
+1. **intercept-base (MAIN world)**
+   - Unified hooks for `fetch` and `XMLHttpRequest`
+   - Site-specific interceptors only need to register: URL matching + response parsing logic
+2. **provider-base (ISOLATED world)**
+   - Unified subtitle forwarding, deduplication, and `timeupdate` cue alignment
+   - Built-in DOM observation and polling fallback
 
-站点实现只保留差异逻辑（选择器、响应解析器），便于继续扩展更多网站。
+Site implementations only contain site-specific logic (selectors, response parsers), making it easy to add support for more websites.
 
-## 添加新的字幕来源
+## Adding New Subtitle Sources
 
-在 `dkitle-extension/providers/` 下新增两个文件，例如 `example-intercept.js` 与 `example.js`：
+Create two new files under `dkitle-extension/providers/`, e.g., `example-intercept.js` and `example.js`:
 
-1. 在 `example-intercept.js` 中调用 `window.__dkitleRegisterInterceptor(...)`
-2. 在 `example.js` 中调用 `window.__dkitleCreateProvider(...)`
-3. 在 `manifest.json` 和 `manifest.firefox.json` 的 `content_scripts` 中注册对应站点注入顺序：
-   - MAIN world: `intercept-base.js` -> `example-intercept.js`
-   - ISOLATED world: `provider-base.js` -> `example.js`
+1. In `example-intercept.js`, call `window.__dkitleRegisterInterceptor(...)`
+2. In `example.js`, call `window.__dkitleCreateProvider(...)`
+3. Register the corresponding site injection order in `manifest.json` and `manifest.firefox.json` under `content_scripts`:
+   - MAIN world: `intercept-base.js` → `example-intercept.js`
+   - ISOLATED world: `provider-base.js` → `example.js`
 
-## 跨平台支持
+## Cross-Platform Support
 
-桌面应用使用 iced 构建，支持：
+The desktop app is built with iced and supports:
 
-- **Windows** (原生)
-- **Linux X11** (原生)
-- **Linux Wayland** (通过 winit Wayland 后端)
-- **macOS** (原生)
+- **Windows** (native)
+- **Linux X11** (native)
+- **Linux Wayland** (via winit Wayland backend)
+- **macOS** (native)
 
-## 窗口标识
+## Window Identifiers
 
-| 窗口     | `app_id` (Wayland)            | 说明                 |
-| -------- | ----------------------------- | -------------------- |
-| 管理窗口 | `org.eu.ywxt.dkitle`          | 主窗口，列出字幕来源 |
-| 字幕窗口 | `org.eu.ywxt.dkitle.subtitle` | 置顶字幕叠加窗口     |
+| Window          | `app_id` (Wayland)            | Description                        |
+| --------------- | ----------------------------- | ---------------------------------- |
+| Manager window  | `org.eu.ywxt.dkitle`          | Main window, lists subtitle sources |
+| Subtitle window | `org.eu.ywxt.dkitle.subtitle` | Always-on-top subtitle overlay     |
 
-## Wayland 平铺窗口管理器配置
+## Wayland Tiling Window Manager Configuration
 
-在 Wayland 平铺窗口管理器（如 Sway、Hyprland）中，字幕窗口默认只会在当前工作区显示，且可能被平铺管理。
+On Wayland tiling window managers (e.g., Sway, Hyprland), the subtitle window will by default only appear on the current workspace and may be tiled.
 
-字幕窗口的 `app_id` 为 `org.eu.ywxt.dkitle.subtitle`，可据此添加窗口规则实现浮动 + 全工作区置顶（sticky）。
+The subtitle window's `app_id` is `org.eu.ywxt.dkitle.subtitle`. You can use this to add window rules for floating + sticky (visible on all workspaces).
 
 ### Sway
 
-在 `~/.config/sway/config` 中添加：
+Add to `~/.config/sway/config`:
 
 ```
 for_window [app_id="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
@@ -142,21 +144,21 @@ for_window [app_id="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
 
 ### Hyprland
 
-在 `~/.config/hypr/hyprland.conf` 中添加：
+Add to `~/.config/hypr/hyprland.conf`:
 
 ```
 windowrulev2 = float, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
 windowrulev2 = pin, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
 ```
 
-### i3（X11）
+### i3 (X11)
 
-在 `~/.config/i3/config` 中添加：
+Add to `~/.config/i3/config`:
 
 ```
 for_window [class="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
 ```
 
-### 其他窗口管理器
+### Other Window Managers
 
-请根据你的 WM 文档，使用 `app_id`（Wayland）或 WM_CLASS（X11）匹配字幕窗口 `org.eu.ywxt.dkitle.subtitle`，并设置为浮动 + 固定（sticky/pin）。
+Refer to your WM's documentation and use `app_id` (Wayland) or WM_CLASS (X11) to match the subtitle window `org.eu.ywxt.dkitle.subtitle`, then set it to floating + sticky/pin.
