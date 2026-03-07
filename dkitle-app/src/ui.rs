@@ -51,6 +51,8 @@ impl SubtitleSource {
     }
 
     /// Find the subtitle cue active at the given time using binary search.
+    /// If the current time falls in a gap between two cues, keep showing
+    /// the previous cue until the next one starts (avoids flickering).
     fn find_cue_at(&self, time_ms: f64) -> Option<&SubtitleCue> {
         // Binary search for the last cue whose start_ms <= time_ms
         let idx = self
@@ -61,8 +63,13 @@ impl SubtitleSource {
         }
         let cue = &self.cues[idx - 1];
         if time_ms < cue.end_ms {
+            // Within the cue's time range
+            Some(cue)
+        } else if idx < self.cues.len() {
+            // In the gap between this cue and the next — keep showing current
             Some(cue)
         } else {
+            // After the very last cue — nothing to show
             None
         }
     }
