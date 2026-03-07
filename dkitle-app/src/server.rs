@@ -86,6 +86,9 @@ async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::UnboundedSender
                                 playback_rate
                             );
                         }
+                        SubtitleMessage::Deactivate { source_id } => {
+                            info!("Deactivating source {}", source_id);
+                        }
                     }
                     if subtitle_tx.send(subtitle).is_err() {
                         error!("UI channel closed, stopping connection");

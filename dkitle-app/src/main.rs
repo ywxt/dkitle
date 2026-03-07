@@ -21,35 +21,29 @@ fn main() -> iced::Result {
         )
         .init();
     info!("Starting dkitle-app");
-
-    // Create channel for subtitle messages: server -> UI (tokio unbounded)
-    let (subtitle_tx, subtitle_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    // Create shutdown signal for the server
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-
-    // Start the WebSocket server in a background thread with its own tokio runtime
-    let port = DEFAULT_PORT;
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-        rt.block_on(server::run_server(port, subtitle_tx, shutdown_rx));
-    });
-
     info!("Launching subtitle manager window");
 
-    // Run the iced daemon (multi-window mode) on the main thread
-    let result = iced::daemon(
-        ui::SubtitleApp::title,
+    // Run the iced daemon (multi-window mode) on the main thread.
+    // Channel creation and server startup are done inside the boot closure
+    // so we don't need Mutex<Option<>> workarounds for the Fn trait bound.
+    iced::daemon(
+        || {
+            let (subtitle_tx, subtitle_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+            let port = DEFAULT_PORT;
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+                rt.block_on(server::run_server(port, subtitle_tx, shutdown_rx));
+            });
+
+            ui::SubtitleApp::new(subtitle_rx, shutdown_tx)
+        },
         ui::SubtitleApp::update,
         ui::SubtitleApp::view,
     )
+    .title(ui::SubtitleApp::title)
     .subscription(ui::SubtitleApp::subscription)
     .theme(ui::SubtitleApp::theme)
-    .run_with(move || ui::SubtitleApp::new(subtitle_rx));
-
-    // Signal the server to shut down gracefully
-    info!("dkitle-app shutting down");
-    let _ = shutdown_tx.send(true);
-
-    result
+    .run()
 }

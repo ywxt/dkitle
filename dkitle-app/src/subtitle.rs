@@ -50,4 +50,8 @@ pub enum SubtitleMessage {
         /// Sender's Date.now() timestamp in milliseconds
         timestamp: u64,
     },
+    /// Sent when a source is no longer active (tab closed/refreshed).
+    Deactivate {
+        source_id: String,
+    },
 }

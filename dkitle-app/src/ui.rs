@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, horizontal_rule, row, scrollable, slider, text};
+use iced::widget::{button, column, container, row, scrollable, slider, text};
 use iced::window;
 use iced::{Element, Length, Subscription, Task, Theme};
 use std::collections::HashMap;
@@ -35,6 +35,8 @@ struct SubtitleSource {
     playback_rate: f64,
     /// Currently displayed subtitle text (cached to avoid unnecessary redraws)
     current_text: String,
+    /// Whether this source is still active (false after tab close/refresh)
+    active: bool,
 }
 
 impl SubtitleSource {
@@ -89,6 +91,8 @@ impl SubtitleSource {
 /// - Subtitle windows: always-on-top overlay windows, one per source
 pub struct SubtitleApp {
     subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
+    /// Shutdown signal sender for the WebSocket server
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
     /// ID of the manager (main) window
     main_window_id: window::Id,
     /// All known subtitle sources: source_id → SubtitleSource
@@ -104,10 +108,12 @@ const DEFAULT_FONT_SIZE: f32 = 28.0;
 impl SubtitleApp {
     pub fn new(
         subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
     ) -> (Self, Task<Message>) {
         let (main_id, open_task) = window::open(manager_window_settings());
         let app = Self {
             subtitle_rx,
+            shutdown_tx,
             main_window_id: main_id,
             sources: HashMap::new(),
             subtitle_windows: HashMap::new(),
@@ -171,6 +177,8 @@ impl SubtitleApp {
 
             Message::WindowClosed(id) => {
                 if id == self.main_window_id {
+                    // Signal the server to shut down gracefully
+                    let _ = self.shutdown_tx.send(true);
                     // Close the main window first, then exit the daemon
                     return window::close(id).chain(iced::exit());
                 } else {
@@ -209,10 +217,12 @@ impl SubtitleApp {
                         playing: false,
                         playback_rate: 1.0,
                         current_text: String::new(),
+                        active: true,
                     }
                 });
                 source.cues = cues;
                 source.provider = provider;
+                source.active = true; // reactivate if it was deactivated
                 if !tab_title.is_empty() {
                     source.tab_title = tab_title;
                 }
@@ -248,6 +258,13 @@ impl SubtitleApp {
 
                     // Immediately update displayed text on sync
                     source.update_current_text();
+                }
+            }
+            SubtitleMessage::Deactivate { source_id } => {
+                if let Some(source) = self.sources.get_mut(&source_id) {
+                    source.active = false;
+                    source.playing = false;
+                    source.current_text = String::new();
                 }
             }
         }
@@ -288,6 +305,18 @@ impl SubtitleApp {
         for (source_id, source) in &self.sources {
             let is_open = self.subtitle_windows.values().any(|sid| sid == source_id);
 
+            // Colors depend on active state
+            let label_color = if source.active {
+                iced::Color::BLACK
+            } else {
+                iced::Color::from_rgb(0.7, 0.7, 0.7)
+            };
+            let status_color = if source.active {
+                iced::Color::from_rgb(0.4, 0.4, 0.4)
+            } else {
+                iced::Color::from_rgb(0.75, 0.75, 0.75)
+            };
+
             // Provider + tab title label
             let label = if source.tab_title.is_empty() {
                 format!("📺 {}", source.provider)
@@ -296,7 +325,9 @@ impl SubtitleApp {
             };
 
             // Status info
-            let status = if source.cues.is_empty() {
+            let status = if !source.active {
+                "Inactive".to_string()
+            } else if source.cues.is_empty() {
                 "No cues".to_string()
             } else {
                 let playing_str = if source.playing { "▶" } else { "⏸" };
@@ -311,10 +342,10 @@ impl SubtitleApp {
             let preview = truncate_str(&source.current_text, 50);
 
             let info_col = column![
-                text(label).size(13),
+                text(label).size(13).color(label_color),
                 text(status)
                     .size(11)
-                    .color(iced::Color::from_rgb(0.4, 0.4, 0.4)),
+                    .color(status_color),
                 text(preview)
                     .size(11)
                     .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
@@ -322,8 +353,11 @@ impl SubtitleApp {
             .spacing(2)
             .width(Length::Fill);
 
-            // Open / Opened button
-            let btn = if is_open {
+            // Open / Opened / Inactive button
+            let btn = if !source.active {
+                // Inactive source: disabled button
+                button(text("Inactive").size(11))
+            } else if is_open {
                 button(text("Opened").size(11))
             } else {
                 button(text("Open").size(11))
@@ -335,7 +369,15 @@ impl SubtitleApp {
                 .spacing(8);
 
             list = list.push(entry);
-            list = list.push(horizontal_rule(1));
+            list = list.push(
+                container(text(""))
+                    .width(Length::Fill)
+                    .height(1)
+                    .style(|_theme: &Theme| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb(0.85, 0.85, 0.85))),
+                        ..Default::default()
+                    }),
+            );
         }
 
         let content = column![

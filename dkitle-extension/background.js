@@ -14,6 +14,33 @@ let stopped = false; // user manually stopped auto-reconnect
 const cachedCues = new Map();  // sourceId → cues payload object
 const cachedSync = new Map();  // sourceId → sync payload object
 
+// Track which tab owns which sourceId (for cleanup on refresh/close)
+const tabSourceMap = new Map();  // tabId → sourceId
+
+// When a tab sends a new sourceId, clean up old data for that tab
+function updateTabSource(tabId, newSourceId) {
+  const oldSourceId = tabSourceMap.get(tabId);
+  if (oldSourceId && oldSourceId !== newSourceId) {
+    cachedCues.delete(oldSourceId);
+    cachedSync.delete(oldSourceId);
+    wsSend({ type: "deactivate", source_id: oldSourceId });
+    console.log(`[dkitle] Tab ${tabId} refreshed: deactivated old source ${oldSourceId}`);
+  }
+  tabSourceMap.set(tabId, newSourceId);
+}
+
+// Clean up source data when a tab is closed
+function cleanupTab(tabId) {
+  const sourceId = tabSourceMap.get(tabId);
+  if (sourceId) {
+    cachedCues.delete(sourceId);
+    cachedSync.delete(sourceId);
+    wsSend({ type: "deactivate", source_id: sourceId });
+    tabSourceMap.delete(tabId);
+    console.log(`[dkitle] Tab ${tabId} closed: deactivated source ${sourceId}`);
+  }
+}
+
 const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 30000;
 
@@ -164,6 +191,10 @@ function getStatusInfo() {
 // Listen for messages from content scripts (providers) and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "cues") {
+    // Track tab → sourceId mapping; clean up stale sources on refresh
+    if (sender.tab?.id != null) {
+      updateTabSource(sender.tab.id, message.sourceId);
+    }
     // Forward all subtitle cues to the app and cache for reconnection
     const cuesPayload = {
       type: "cues",
@@ -176,6 +207,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     wsSend(cuesPayload);
     sendResponse({ ok: true });
   } else if (message.type === "sync") {
+    // Track tab → sourceId mapping; clean up stale sources on refresh
+    if (sender.tab?.id != null) {
+      updateTabSource(sender.tab.id, message.sourceId);
+    }
     // Forward time sync to the app and cache for reconnection
     const syncPayload = {
       type: "sync",
@@ -198,6 +233,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
   }
   return false;
+});
+
+// Clean up when a tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  cleanupTab(tabId);
 });
 
 // Start connection on load

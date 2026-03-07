@@ -16,11 +16,13 @@ serde_json = "1"
 
 # GUI - iced with dual renderer (wgpu GPU + tiny-skia CPU fallback)
 # Cross-platform: Windows, Linux X11, Wayland, macOS
-iced = { version = "0.13", default-features = false, features = [
+iced = { version = "0.14", default-features = false, features = [
+    "linux-theme-detection",
+    "x11",
+    "wayland",
     "wgpu",
     "tiny-skia",
     "tokio",
-    "multi-window",
 ] }
 
 # Logging
