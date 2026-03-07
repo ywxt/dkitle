@@ -215,6 +215,31 @@ impl SubtitleApp {
 
     fn handle_subtitle_message(&mut self, msg: SubtitleMessage) {
         match msg {
+            SubtitleMessage::Register {
+                provider,
+                source_id,
+                tab_title,
+            } => {
+                let source = self
+                    .sources
+                    .entry(source_id)
+                    .or_insert_with(|| SubtitleSource {
+                        provider: provider.clone(),
+                        tab_title: String::new(),
+                        cues: Vec::new(),
+                        sync_video_time_ms: 0.0,
+                        sync_instant: Instant::now(),
+                        playing: false,
+                        playback_rate: 1.0,
+                        current_text: String::new(),
+                        active: true,
+                    });
+                source.provider = provider;
+                source.active = true;
+                if !tab_title.is_empty() {
+                    source.tab_title = tab_title;
+                }
+            }
             SubtitleMessage::Cues {
                 provider,
                 source_id,
@@ -365,10 +390,13 @@ impl SubtitleApp {
             .spacing(2)
             .width(Length::Fill);
 
-            // Open / Opened / Inactive button
+            // Open / Opened / Inactive / No Subtitles button
             let btn = if !source.active {
                 // Inactive source: disabled button
                 button(text("Inactive").size(11))
+            } else if source.cues.is_empty() {
+                // No subtitles captured: disabled button
+                button(text("No Subtitles").size(11))
             } else if is_open {
                 button(text("Opened").size(11))
             } else {

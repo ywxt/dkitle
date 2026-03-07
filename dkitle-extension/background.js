@@ -11,6 +11,7 @@ let nextReconnectMs = 0;
 let stopped = false; // user manually stopped auto-reconnect
 
 // Cache for resending data after reconnection
+const cachedRegister = new Map();  // sourceId → register payload object
 const cachedCues = new Map();  // sourceId → cues payload object
 const cachedSync = new Map();  // sourceId → sync payload object
 
@@ -21,6 +22,7 @@ const tabSourceMap = new Map();  // tabId → sourceId
 function updateTabSource(tabId, newSourceId) {
   const oldSourceId = tabSourceMap.get(tabId);
   if (oldSourceId && oldSourceId !== newSourceId) {
+    cachedRegister.delete(oldSourceId);
     cachedCues.delete(oldSourceId);
     cachedSync.delete(oldSourceId);
     wsSend({ type: "deactivate", source_id: oldSourceId });
@@ -33,6 +35,7 @@ function updateTabSource(tabId, newSourceId) {
 function cleanupTab(tabId) {
   const sourceId = tabSourceMap.get(tabId);
   if (sourceId) {
+    cachedRegister.delete(sourceId);
     cachedCues.delete(sourceId);
     cachedSync.delete(sourceId);
     wsSend({ type: "deactivate", source_id: sourceId });
@@ -156,9 +159,13 @@ function wsSend(data) {
   // Silently skip if not connected
 }
 
-// Resend all cached cues and sync data after reconnection
+// Resend all cached data after reconnection
 function resendCachedData() {
   let count = 0;
+  for (const data of cachedRegister.values()) {
+    wsSend(data);
+    count++;
+  }
   for (const data of cachedCues.values()) {
     wsSend(data);
     count++;
@@ -173,7 +180,7 @@ function resendCachedData() {
 }
 
 function notifyStatusChange() {
-  const status = getStatusInfo();
+  const status = { ...getStatusInfo(), ...getSubtitleStatus() };
   chrome.runtime.sendMessage({ type: "status", ...status }).catch(() => {
     // popup not open, ignore
   });
@@ -188,14 +195,52 @@ function getStatusInfo() {
   };
 }
 
+// Build subtitle capture status for the popup
+function getSubtitleStatus() {
+  const sources = [];
+  // Start from registered sources
+  for (const [sourceId, payload] of cachedRegister.entries()) {
+    const cuesPayload = cachedCues.get(sourceId);
+    sources.push({
+      sourceId,
+      provider: payload.provider || "unknown",
+      tabTitle: payload.tab_title || "",
+      cueCount: cuesPayload ? (cuesPayload.cues || []).length : 0,
+    });
+  }
+  return { sources };
+}
+
 // Listen for messages from content scripts (providers) and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "cues") {
+  if (message.type === "register") {
     // Track tab → sourceId mapping; clean up stale sources on refresh
     if (sender.tab?.id != null) {
       updateTabSource(sender.tab.id, message.sourceId);
     }
-    // Forward all subtitle cues to the app and cache for reconnection
+    // Register this source in the app (no cues yet)
+    const registerPayload = {
+      type: "register",
+      provider: message.provider,
+      source_id: message.sourceId,
+      tab_title: sender.tab?.title || "",
+    };
+    cachedRegister.set(message.sourceId, registerPayload);
+    wsSend(registerPayload);
+    // Notify popup about new source
+    notifyStatusChange();
+    sendResponse({ ok: true });
+  } else if (message.type === "cues") {
+    // Track tab → sourceId mapping; clean up stale sources on refresh
+    if (sender.tab?.id != null) {
+      updateTabSource(sender.tab.id, message.sourceId);
+    }
+    // Filter out empty cues
+    if (!message.cues || message.cues.length === 0) {
+      sendResponse({ ok: true });
+      return false;
+    }
+    // Forward subtitle cues to the app and cache for reconnection
     const cuesPayload = {
       type: "cues",
       provider: message.provider,
@@ -205,6 +250,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     };
     cachedCues.set(message.sourceId, cuesPayload);
     wsSend(cuesPayload);
+    // Notify popup about subtitle capture change
+    notifyStatusChange();
     sendResponse({ ok: true });
   } else if (message.type === "sync") {
     // Track tab → sourceId mapping; clean up stale sources on refresh
@@ -224,7 +271,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     wsSend(syncPayload);
     sendResponse({ ok: true });
   } else if (message.type === "getStatus") {
-    sendResponse(getStatusInfo());
+    sendResponse({ ...getStatusInfo(), ...getSubtitleStatus() });
   } else if (message.type === "retryNow") {
     retryNow();
     sendResponse({ ok: true });

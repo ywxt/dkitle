@@ -62,6 +62,19 @@
 
         videoEl = video;
 
+        // Register this source immediately (even if no subtitles are captured yet)
+        // This ensures the app knows about this video source
+        chrome.runtime
+          .sendMessage({
+            type: "register",
+            provider: provider,
+            sourceId: SOURCE_ID,
+          })
+          .catch(() => {});
+        console.log(
+          `[dkitle] [${provider}] Registered source ${SOURCE_ID} (video detected)`
+        );
+
         video.addEventListener("timeupdate", () => sendSync(video));
         video.addEventListener("play", () => sendSync(video));
         video.addEventListener("pause", () => sendSync(video));

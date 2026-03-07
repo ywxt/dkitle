@@ -58,6 +58,17 @@ async fn handle_socket(mut socket: WebSocket, subtitle_tx: mpsc::UnboundedSender
             Ok(Message::Text(text)) => match serde_json::from_str::<SubtitleMessage>(&text) {
                 Ok(subtitle) => {
                     match &subtitle {
+                        SubtitleMessage::Register {
+                            provider,
+                            source_id,
+                            ..
+                        } => {
+                            info!(
+                                "[{}] Registered source {}",
+                                provider,
+                                source_id
+                            );
+                        }
                         SubtitleMessage::Cues {
                             provider,
                             source_id,

@@ -6,6 +6,9 @@ const hint = document.getElementById("hint");
 const info = document.getElementById("info");
 const retryBtn = document.getElementById("retryBtn");
 const stopBtn = document.getElementById("stopBtn");
+const sourcesDiv = document.getElementById("sources");
+const sourcesTitle = document.getElementById("sourcesTitle");
+const sourcesList = document.getElementById("sourcesList");
 
 let countdownTimer = null;
 
@@ -26,6 +29,9 @@ const I18N = {
     stopped: "已停止自动重连",
     stoppedHint: "点击「立即重试」手动连接",
     infoText: "请先打开 dkitle-app 桌面应用",
+    sourcesTitle: "字幕捕获",
+    captured: (n) => `✅ 已捕获 ${n} 条字幕`,
+    noSubtitles: "⚠️ 未捕获字幕",
   },
   en: {
     title: "dkitle",
@@ -40,6 +46,9 @@ const I18N = {
     stopped: "Auto-reconnect stopped",
     stoppedHint: 'Click "Retry Now" to connect manually',
     infoText: "Please open the dkitle-app desktop application first",
+    sourcesTitle: "Subtitle Capture",
+    captured: (n) => `✅ Captured ${n} cues`,
+    noSubtitles: "⚠️ No subtitles",
   },
 };
 
@@ -53,9 +62,59 @@ label.textContent = t.connecting;
 retryBtn.textContent = t.retryNow;
 stopBtn.textContent = t.stopRetry;
 
+// ── Sources rendering ─────────────────────────────────
+function updateSources(sources) {
+  if (!sources || sources.length === 0) {
+    sourcesDiv.classList.remove("visible");
+    return;
+  }
+
+  sourcesDiv.classList.add("visible");
+  sourcesTitle.textContent = t.sourcesTitle;
+  sourcesList.innerHTML = "";
+
+  for (const src of sources) {
+    const item = document.createElement("div");
+    item.className = "source-item";
+
+    const icon = document.createElement("span");
+    icon.className = "source-icon";
+    icon.textContent = "📺";
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "source-info";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "source-label";
+    const providerName = src.provider.charAt(0).toUpperCase() + src.provider.slice(1);
+    labelSpan.textContent = src.tabTitle
+      ? `${providerName} — ${src.tabTitle}`
+      : providerName;
+    labelSpan.title = labelSpan.textContent;
+
+    const statusSpan = document.createElement("span");
+    if (src.cueCount > 0) {
+      statusSpan.className = "source-status captured";
+      statusSpan.textContent = t.captured(src.cueCount);
+    } else {
+      statusSpan.className = "source-status no-subs";
+      statusSpan.textContent = t.noSubtitles;
+    }
+
+    infoDiv.appendChild(labelSpan);
+    infoDiv.appendChild(statusSpan);
+    item.appendChild(icon);
+    item.appendChild(infoDiv);
+    sourcesList.appendChild(item);
+  }
+}
+
 // ── Status rendering ──────────────────────────────────
 function updateStatus(status) {
   clearCountdown();
+
+  // Update subtitle sources display
+  updateSources(status.sources);
 
   if (status.connected) {
     dot.className = "dot connected";

@@ -35,6 +35,12 @@ pub struct SubtitleCue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SubtitleMessage {
+    /// Registers a new source (video detected, subtitles may or may not exist).
+    Register {
+        provider: Provider,
+        source_id: String,
+        tab_title: String,
+    },
     Cues {
         provider: Provider,
         source_id: String,
