@@ -32,7 +32,7 @@
 ### 2. 安装油猴脚本
 
 1. 在浏览器中安装 [Tampermonkey](https://www.tampermonkey.net/) 或 [Violentmonkey](https://violentmonkey.github.io/)
-2. [点击此处安装 dkitle.user.js](https://github.com/ywxt/dkitle/raw/main/dkitle.user.js)
+2. [点击此处安装 dkitle.user.js](https://greasyfork.org/en/scripts/568843-dkitle-subtitle-sync)
 3. 在脚本管理器中确认安装
 
 > 油猴脚本支持所有浏览器（Chrome、Firefox、Edge、Safari），无需商店审核。
@@ -120,6 +120,8 @@ python build.py package --target x86_64-unknown-linux-gnu
 dkitle/
 ├── dkitle.user.js           # 油猴脚本 — 字幕拦截与同步（Tampermonkey/Violentmonkey）
 ├── build.py                 # 桌面应用打包脚本（跨平台，Python 3）
+├── build.sh                 # 构建脚本（Linux/macOS）
+├── build.bat                # 构建脚本（Windows）
 ├── scripts/
 │   └── generate_icons.py    # 图标生成（PNG、ICO、ICNS）
 │

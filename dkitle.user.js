@@ -1,9 +1,24 @@
 // ==UserScript==
 // @name         dkitle - Subtitle Sync
+// @name:zh-CN   dkitle - 字幕同步
+// @name:zh-TW   dkitle - 字幕同步
+// @name:ja      dkitle - 字幕同期
+// @name:ko      dkitle - 자막 동기화
+// @name:fr      dkitle - Synchronisation des sous-titres
+// @name:de      dkitle - Untertitel-Synchronisation
+// @name:es      dkitle - Sincronización de subtítulos
+// @name:ru      dkitle - Синхронизация субтитров
 // @namespace    https://github.com/ywxt/dkitle
 // @version      1.2.0
 // @description  Sync video subtitles from YouTube/Bilibili to the dkitle desktop overlay app
-// @description:zh 将 YouTube/Bilibili 视频字幕同步到 dkitle 桌面置顶窗口
+// @description:zh-CN 将 YouTube/Bilibili 视频字幕同步到 dkitle 桌面置顶窗口
+// @description:zh-TW 將 YouTube/Bilibili 視頻字幕同步到 dkitle 桌面置頂視窗
+// @description:ja    YouTube/Bilibili の動画字幕を dkitle デスクトップオーバーレイに同期
+// @description:ko    YouTube/Bilibili 비디오 자막을 dkitle 데스크톱 오버레이에 동기화
+// @description:fr    Synchroniser les sous-titres YouTube/Bilibili vers la fenêtre dkitle
+// @description:de    YouTube/Bilibili-Untertitel mit dem dkitle-Desktop-Overlay synchronisieren
+// @description:es    Sincronizar subtítulos de YouTube/Bilibili con la ventana dkitle
+// @description:ru    Синхронизация субтитров YouTube/Bilibili с оверлеем dkitle
 // @author       ywxt
 // @match        *://*.youtube.com/*
 // @match        *://*.bilibili.com/*
@@ -75,6 +90,45 @@
   }
 
   const T = LANG_STRINGS[detectLang()] || LANG_STRINGS.en;
+
+  // ╔═══════════════════════════════════════════════════════════════════╗
+  // ║  THEME                                                           ║
+  // ╚═══════════════════════════════════════════════════════════════════╝
+
+  const THEMES = {
+    dark: {
+      panelBg: "#1a1a2e",
+      headerBg: "#16213e",
+      textColor: "#e0e0e0",
+      labelColor: "#e0e0e0",
+      valueColor: "#e0e0e0",
+      btnBg: "#2a2a4a",
+      btnHoverBg: "#3a3a5a",
+      btnBorder: "#444",
+      btnText: "#e0e0e0",
+      divider: "#2a2a4a",
+      shadow: "0 4px 16px rgba(0,0,0,0.4)",
+      collapseBtnColor: "#e0e0e0",
+    },
+    light: {
+      panelBg: "#ffffff",
+      headerBg: "#f0f0f5",
+      textColor: "#333333",
+      labelColor: "#333333",
+      valueColor: "#555555",
+      btnBg: "#e8e8f0",
+      btnHoverBg: "#d0d0e0",
+      btnBorder: "#ccc",
+      btnText: "#333333",
+      divider: "#ddd",
+      shadow: "0 4px 16px rgba(0,0,0,0.15)",
+      collapseBtnColor: "#333333",
+    },
+  };
+
+  function detectTheme() {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
 
   // ╔═══════════════════════════════════════════════════════════════════╗
   // ║  SITE DEFINITIONS                                                ║
@@ -429,6 +483,7 @@
       this._expanded = false;
       this._tickTimer = null;
       this._pos = { right: 16, bottom: 16 };
+      this._themeName = detectTheme();
 
       // DOM refs updated by updateUI
       this._elBackend = null;
@@ -436,15 +491,31 @@
       this._elVideo = null;
       this._elRetryBtn = null;
       this._elStopBtn = null;
+      // DOM refs for themed elements
+      this._elHeader = null;
+      this._elCollapseBtn = null;
+      this._elBody = null;
+      this._elBtnRow = null;
+      this._labels = [];
+      this._buttons = [];
     }
 
     create() {
       this._loadPos();
       this._createBadge();
       this._createPanel();
+      this._applyTheme();
 
       document.body.appendChild(this._badge);
       document.body.appendChild(this._panel);
+
+      // Listen for system theme changes
+      this._mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      this._themeChangeHandler = () => {
+        this._themeName = detectTheme();
+        this._applyTheme();
+      };
+      this._mediaQuery.addEventListener("change", this._themeChangeHandler);
 
       this._tickTimer = setInterval(() => this.updateUI(), 1000);
       this.updateUI();
@@ -452,6 +523,9 @@
 
     destroy() {
       if (this._tickTimer) clearInterval(this._tickTimer);
+      if (this._mediaQuery && this._themeChangeHandler) {
+        this._mediaQuery.removeEventListener("change", this._themeChangeHandler);
+      }
     }
 
     updateUI() {
@@ -601,11 +675,11 @@
       const panel = document.createElement("div");
       Object.assign(panel.style, {
         position: "fixed", width: "240px",
-        background: "#1a1a2e", color: "#e0e0e0",
         borderRadius: "8px", fontFamily: "system-ui, sans-serif",
         fontSize: "13px", lineHeight: "1.5",
-        zIndex: "2147483647", boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+        zIndex: "2147483647",
         display: "none", overflow: "hidden", userSelect: "none",
+        transition: "background 0.2s, color 0.2s, box-shadow 0.2s",
       });
       this._applyPos(panel);
 
@@ -614,15 +688,17 @@
       Object.assign(header.style, {
         display: "flex", justifyContent: "space-between",
         alignItems: "center", padding: "8px 12px",
-        background: "#16213e", fontWeight: "bold",
-        fontSize: "13px", cursor: "grab",
+        fontWeight: "bold", fontSize: "13px", cursor: "grab",
+        transition: "background 0.2s",
       });
       header.textContent = T.panelTitle;
+      this._elHeader = header;
 
       const collapseBtn = document.createElement("span");
       collapseBtn.textContent = "▾";
       Object.assign(collapseBtn.style, { cursor: "pointer", fontSize: "16px", lineHeight: "1" });
       collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); this._toggle(false); });
+      this._elCollapseBtn = collapseBtn;
       header.appendChild(collapseBtn);
       panel.appendChild(header);
 
@@ -634,6 +710,7 @@
       // Body
       const body = document.createElement("div");
       Object.assign(body.style, { padding: "8px 12px" });
+      this._elBody = body;
 
       this._elBackend = this._makeRow(body, T.backend);
       this._elSubtitles = this._makeRow(body, T.subtitles);
@@ -643,8 +720,9 @@
       const btnRow = document.createElement("div");
       Object.assign(btnRow.style, {
         display: "flex", gap: "6px", marginTop: "8px",
-        paddingTop: "8px", borderTop: "1px solid #2a2a4a",
+        paddingTop: "8px",
       });
+      this._elBtnRow = btnRow;
 
       this._elRetryBtn = this._makeBtn(T.retryNow, () => this._conn.retryNow());
       this._elStopBtn = this._makeBtn(T.stopRetry, () => this._conn.stopRetry());
@@ -665,6 +743,7 @@
       const lbl = document.createElement("span");
       lbl.textContent = label;
       Object.assign(lbl.style, { fontWeight: "500" });
+      this._labels.push(lbl);
       const val = document.createElement("span");
       Object.assign(val.style, { fontSize: "12px" });
       row.appendChild(lbl);
@@ -678,14 +757,60 @@
       btn.textContent = text;
       Object.assign(btn.style, {
         flex: "1", padding: "4px 0",
-        border: "1px solid #444", borderRadius: "4px",
-        background: "#2a2a4a", color: "#e0e0e0",
+        borderRadius: "4px",
         cursor: "pointer", fontSize: "12px", fontFamily: "inherit",
+        transition: "background 0.2s, color 0.2s",
       });
-      btn.addEventListener("mouseenter", () => (btn.style.background = "#3a3a5a"));
-      btn.addEventListener("mouseleave", () => (btn.style.background = "#2a2a4a"));
+      btn.addEventListener("mouseenter", () => {
+        const t = THEMES[this._themeName];
+        btn.style.background = t.btnHoverBg;
+      });
+      btn.addEventListener("mouseleave", () => {
+        const t = THEMES[this._themeName];
+        btn.style.background = t.btnBg;
+      });
       btn.addEventListener("click", onClick);
+      this._buttons.push(btn);
       return btn;
+    }
+
+    // ── private: theme ──
+
+    _applyTheme() {
+      const t = THEMES[this._themeName];
+      if (!this._panel) return;
+
+      // Panel
+      this._panel.style.background = t.panelBg;
+      this._panel.style.color = t.textColor;
+      this._panel.style.boxShadow = t.shadow;
+
+      // Header
+      this._elHeader.style.background = t.headerBg;
+      this._elHeader.style.color = t.textColor;
+      this._elCollapseBtn.style.color = t.collapseBtnColor;
+
+      // Labels
+      for (const lbl of this._labels) {
+        lbl.style.color = t.labelColor;
+      }
+
+      // Value spans
+      if (this._elBackend) this._elBackend.style.color = t.valueColor;
+      if (this._elSubtitles) this._elSubtitles.style.color = t.valueColor;
+      if (this._elVideo) this._elVideo.style.color = t.valueColor;
+
+      // Button row divider
+      if (this._elBtnRow) {
+        this._elBtnRow.style.borderTop = `1px solid ${t.divider}`;
+      }
+
+      // Buttons
+      for (const btn of this._buttons) {
+        btn.style.background = t.btnBg;
+        btn.style.color = t.btnText;
+        btn.style.border = `1px solid ${t.btnBorder}`;
+      }
     }
   }
 

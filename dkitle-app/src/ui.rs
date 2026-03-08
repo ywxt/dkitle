@@ -1,4 +1,5 @@
 use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping};
+use iced::theme;
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::window;
 use iced::{Element, Length, Size, Subscription, Task, Theme};
@@ -19,6 +20,8 @@ pub enum Message {
     WindowClosed(window::Id),
     /// Window was resized — track new size
     WindowResized(window::Id, Size),
+    /// System theme mode changed (light/dark)
+    SystemThemeChanged(theme::Mode),
 }
 
 /// Represents a subtitle source (one per browser tab)
@@ -111,6 +114,8 @@ pub struct SubtitleApp {
     /// cosmic-text font system for accurate text measurement
     /// Wrapped in RefCell so we can borrow mutably from &self in view()
     font_system: RefCell<FontSystem>,
+    /// Current system theme mode (light/dark), updated via iced::system::theme_changes
+    system_mode: theme::Mode,
 }
 
 const DEFAULT_SUBTITLE_WIDTH: f32 = 600.0;
@@ -136,8 +141,11 @@ impl SubtitleApp {
             subtitle_windows: HashMap::new(),
             window_sizes: HashMap::new(),
             font_system: RefCell::new(FontSystem::new()),
+            system_mode: theme::Mode::None,
         };
-        (app, open_task.discard())
+        // Fetch initial system theme
+        let init_theme = iced::system::theme().map(Message::SystemThemeChanged);
+        (app, Task::batch([open_task.discard(), init_theme]))
     }
 
     // ── title / theme (per window) ─────────────────────
@@ -160,10 +168,18 @@ impl SubtitleApp {
 
     pub fn theme(&self, window_id: window::Id) -> Theme {
         if window_id == self.main_window_id {
-            Theme::Light
+            match self.system_mode {
+                theme::Mode::Dark => Theme::Dark,
+                _ => Theme::Light,
+            }
         } else {
             Theme::Dark
         }
+    }
+
+    /// Check if the current system theme is dark
+    fn is_dark_theme(&self) -> bool {
+        self.system_mode == theme::Mode::Dark
     }
 
     // ── update ─────────────────────────────────────────
@@ -208,6 +224,10 @@ impl SubtitleApp {
 
             Message::WindowResized(id, size) => {
                 self.window_sizes.insert(id, size);
+            }
+
+            Message::SystemThemeChanged(mode) => {
+                self.system_mode = mode;
             }
         }
         Task::none()
@@ -325,6 +345,7 @@ impl SubtitleApp {
 
     /// Management window: lists all active subtitle sources
     fn view_manager(&self) -> Element<'_, Message> {
+        let dark = self.is_dark_theme();
         let title_row = text("dkitle").size(20);
 
         if self.sources.is_empty() {
@@ -345,19 +366,49 @@ impl SubtitleApp {
 
         let mut list = column![].spacing(4);
 
-        for (source_id, source) in &self.sources {
+        // Theme-aware colors
+        let primary_color = if dark {
+            iced::Color::WHITE
+        } else {
+            iced::Color::BLACK
+        };
+        let inactive_color = if dark {
+            iced::Color::from_rgb(0.45, 0.45, 0.45)
+        } else {
+            iced::Color::from_rgb(0.7, 0.7, 0.7)
+        };
+        let secondary_color = if dark {
+            iced::Color::from_rgb(0.65, 0.65, 0.65)
+        } else {
+            iced::Color::from_rgb(0.4, 0.4, 0.4)
+        };
+        let inactive_secondary = if dark {
+            iced::Color::from_rgb(0.35, 0.35, 0.35)
+        } else {
+            iced::Color::from_rgb(0.75, 0.75, 0.75)
+        };
+        let divider_color = if dark {
+            iced::Color::from_rgb(0.25, 0.25, 0.25)
+        } else {
+            iced::Color::from_rgb(0.85, 0.85, 0.85)
+        };
+
+        let mut sorted_sources: Vec<_> = self.sources.iter().collect();
+        sorted_sources.sort_by(|a, b| b.1.active.cmp(&a.1.active));
+
+        for (source_id, source) in sorted_sources {
             let is_open = self.subtitle_windows.values().any(|sid| sid == source_id);
 
             // Colors depend on active state
             let label_color = if source.active {
-                iced::Color::BLACK
+                primary_color
             } else {
-                iced::Color::from_rgb(0.7, 0.7, 0.7)
+                inactive_color
             };
             let status_color = if source.active {
-                iced::Color::from_rgb(0.4, 0.4, 0.4)
+                secondary_color
             } else {
-                iced::Color::from_rgb(0.75, 0.75, 0.75)
+                inactive_secondary
             };
 
             // Provider + tab title label
@@ -410,10 +461,8 @@ impl SubtitleApp {
 
             list = list.push(entry);
             list = list.push(container(text("")).width(Length::Fill).height(1).style(
-                |_theme: &Theme| container::Style {
-                    background: Some(iced::Background::Color(iced::Color::from_rgb(
-                        0.85, 0.85, 0.85,
-                    ))),
+                move |_theme: &Theme| container::Style {
+                    background: Some(iced::Background::Color(divider_color)),
                     ..Default::default()
                 },
             ));
@@ -501,6 +550,7 @@ impl SubtitleApp {
             tick,
             window::close_events().map(Message::WindowClosed),
             window::resize_events().map(|(id, size)| Message::WindowResized(id, size)),
+            iced::system::theme_changes().map(Message::SystemThemeChanged),
         ])
     }
 }

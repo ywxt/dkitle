@@ -32,7 +32,7 @@ Once started, the app will:
 ### 2. Install the Userscript
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/) in your browser
-2. [Click here to install dkitle.user.js](https://github.com/ywxt/dkitle/raw/main/dkitle.user.js)
+2. [Click here to install dkitle.user.js](https://greasyfork.org/en/scripts/568843-dkitle-subtitle-sync)
 3. Confirm the installation in your userscript manager
 
 > Works across all browsers (Chrome, Firefox, Edge, Safari) with no store review required.
@@ -120,6 +120,8 @@ python build.py package --target x86_64-unknown-linux-gnu
 dkitle/
 ├── dkitle.user.js           # Userscript — subtitle interception & sync (Tampermonkey/Violentmonkey)
 ├── build.py                 # Desktop app packaging script (cross-platform, Python 3)
+├── build.sh                 # Build script (Linux/macOS)
+├── build.bat                # Build script (Windows)
 ├── scripts/
 │   └── generate_icons.py    # Icon generation (PNG, ICO, ICNS)
 │
