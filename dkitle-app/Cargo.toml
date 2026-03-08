@@ -34,3 +34,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Tower for HTTP service
 tower-http = { version = "0.6", features = ["cors"] }
+
+[build-dependencies]
+winresource = "0.1"

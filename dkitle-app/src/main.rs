@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod server;
 mod subtitle;
 mod ui;

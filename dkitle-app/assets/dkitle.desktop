@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=dkitle
+Comment=Sync video subtitles to desktop overlay
+Exec=dkitle-app
+Icon=dkitle
+Type=Application
+Categories=Utility;AudioVideo;
+StartupWMClass=org.eu.ywxt.dkitle

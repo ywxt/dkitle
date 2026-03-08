@@ -4,6 +4,134 @@
 
 Sync video subtitles from your browser to an always-on-top desktop overlay window.
 
+**Supported Sites:** YouTube, Bilibili
+
+**Supported Platforms:** Windows, Linux (X11/Wayland), macOS
+
+## Usage
+
+### 1. Start the Desktop App
+
+Download the latest release from [GitHub Releases](https://github.com/ywxt/dkitle/releases), or build from source (see below).
+
+Once started, the app will:
+
+- Open a WebSocket server at `ws://localhost:9877/ws`
+- Show a manager window listing all subtitle sources
+
+### 2. Install the Browser Extension
+
+#### Chrome
+
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer Mode**
+3. Click **Load unpacked**
+4. Select the `dkitle-extension` directory
+
+#### Firefox (128+)
+
+1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on**
+3. Select `dkitle-extension/manifest.firefox.json`
+
+### 3. Use
+
+1. Make sure dkitle-app is running
+2. Open a YouTube or Bilibili video with subtitles enabled
+3. Subtitles will automatically sync to the desktop overlay window
+4. The subtitle window is freely resizable — font size adapts automatically to the window dimensions
+
+### Window Manager Configuration (Linux)
+
+#### Window Identifiers
+
+| Window          | `app_id` (Wayland)            | Description                         |
+| --------------- | ----------------------------- | ----------------------------------- |
+| Manager window  | `org.eu.ywxt.dkitle`          | Main window, lists subtitle sources |
+| Subtitle window | `org.eu.ywxt.dkitle.subtitle` | Always-on-top subtitle overlay      |
+
+#### Wayland Tiling Window Managers
+
+On Wayland tiling window managers (e.g., Sway, Hyprland), the subtitle window will by default only appear on the current workspace and may be tiled. Use the `app_id` `org.eu.ywxt.dkitle.subtitle` to add window rules for floating + sticky.
+
+**Sway** (`~/.config/sway/config`):
+
+```
+for_window [app_id="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
+```
+
+**Hyprland** (`~/.config/hypr/hyprland.conf`):
+
+```
+windowrulev2 = float, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
+windowrulev2 = pin, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
+```
+
+**i3 (X11)** (`~/.config/i3/config`):
+
+```
+for_window [class="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
+```
+
+For other window managers, refer to your WM's documentation and use `app_id` (Wayland) or WM_CLASS (X11) to match the subtitle window `org.eu.ywxt.dkitle.subtitle`, then set it to floating + sticky/pin.
+
+## Building from Source
+
+### Desktop App
+
+#### Requirements
+
+- **Rust** (latest stable)
+- Platform-specific dependencies for [iced](https://github.com/iced-rs/iced)
+
+#### Build
+
+```bash
+cd dkitle-app
+cargo build --release
+# Output: dkitle-app/target/release/dkitle-app
+```
+
+Or run directly:
+
+```bash
+cd dkitle-app
+cargo run
+```
+
+### Browser Extension
+
+#### Requirements
+
+- **Python 3.6+** (standard library only, no third-party packages needed)
+- **Operating System**: Windows, Linux, or macOS
+
+The browser extension is pure JavaScript — no npm, Node.js, or bundler is required.
+
+#### Build
+
+```bash
+# Build the Firefox extension
+python build.py firefox
+# Output: build/dkitle-firefox.zip
+
+# Build the Chrome extension
+python build.py chrome
+# Output: build/dkitle-chrome.zip
+
+# Build both at once
+python build.py all
+# Output: build/dkitle-chrome.zip and build/dkitle-firefox.zip
+
+# Development build (uncompressed directory, can be loaded directly)
+python build.py all --dev
+# Output: build/chrome/ and build/firefox/
+```
+
+The build script (`build.py`) copies the extension source files and the appropriate manifest (`manifest.firefox.json` for Firefox, `manifest.json` for Chrome) into a zip archive. No compilation, transpilation, or minification is performed — the output zip contains the exact same JavaScript source files as in the repository.
+
+Wrapper scripts are also available: `./build.sh` (Linux/macOS) and `build.bat` (Windows).
+
 ## Project Structure
 
 ```text
@@ -34,61 +162,6 @@ dkitle/
         └── ui.rs         # iced always-on-top subtitle window
 ```
 
-## Usage
-
-### 1. Start the Desktop App
-
-```bash
-cd dkitle-app
-cargo run
-```
-
-Once started, the app will:
-
-- Open a WebSocket server at `ws://localhost:9877/ws`
-- Show a manager window listing all subtitle sources
-
-### 2. Install the Browser Extension
-
-#### Chrome
-
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable **Developer Mode**
-3. Click **Load unpacked**
-4. Select the `dkitle-extension` directory
-
-#### Firefox (128+)
-
-1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on**
-3. Select `dkitle-extension/manifest.firefox.json`
-
-> **Packaging for release** (from the project root, requires Python 3):
->
-> ```bash
-> ./build.sh all             # Linux/macOS — build Chrome + Firefox .zip
-> build.bat all              # Windows
-> ```
->
-> **Development build** (outputs uncompressed directory, can be loaded directly in the browser):
->
-> ```bash
-> ./build.sh all --dev       # Linux/macOS — outputs build/chrome/ and build/firefox/
-> build.bat all --dev        # Windows
-> ```
->
-> You can also call directly: `python build.py chrome|firefox|all [--dev]`
->
-> - Default mode: builds `build/dkitle-chrome.zip` / `build/dkitle-firefox.zip`
-> - `--dev` mode: builds `build/chrome/` / `build/firefox/` directories that can be loaded directly
-
-### 3. Use
-
-1. Make sure dkitle-app is running
-2. Open a YouTube or Bilibili video with subtitles enabled
-3. Subtitles will automatically sync to the desktop overlay window
-4. The subtitle window is freely resizable — font size adapts automatically to the window dimensions
-
 ## Provider Architecture
 
 The extension abstracts provider capabilities into two shared layers:
@@ -111,54 +184,3 @@ Create two new files under `dkitle-extension/providers/`, e.g., `example-interce
 3. Register the corresponding site injection order in `manifest.json` and `manifest.firefox.json` under `content_scripts`:
    - MAIN world: `intercept-base.js` → `example-intercept.js`
    - ISOLATED world: `provider-base.js` → `example.js`
-
-## Cross-Platform Support
-
-The desktop app is built with iced and supports:
-
-- **Windows** (native)
-- **Linux X11** (native)
-- **Linux Wayland** (via winit Wayland backend)
-- **macOS** (native)
-
-## Window Identifiers
-
-| Window          | `app_id` (Wayland)            | Description                        |
-| --------------- | ----------------------------- | ---------------------------------- |
-| Manager window  | `org.eu.ywxt.dkitle`          | Main window, lists subtitle sources |
-| Subtitle window | `org.eu.ywxt.dkitle.subtitle` | Always-on-top subtitle overlay     |
-
-## Wayland Tiling Window Manager Configuration
-
-On Wayland tiling window managers (e.g., Sway, Hyprland), the subtitle window will by default only appear on the current workspace and may be tiled.
-
-The subtitle window's `app_id` is `org.eu.ywxt.dkitle.subtitle`. You can use this to add window rules for floating + sticky (visible on all workspaces).
-
-### Sway
-
-Add to `~/.config/sway/config`:
-
-```
-for_window [app_id="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
-```
-
-### Hyprland
-
-Add to `~/.config/hypr/hyprland.conf`:
-
-```
-windowrulev2 = float, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
-windowrulev2 = pin, class:^(org\.eu\.ywxt\.dkitle\.subtitle)$
-```
-
-### i3 (X11)
-
-Add to `~/.config/i3/config`:
-
-```
-for_window [class="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
-```
-
-### Other Window Managers
-
-Refer to your WM's documentation and use `app_id` (Wayland) or WM_CLASS (X11) to match the subtitle window `org.eu.ywxt.dkitle.subtitle`, then set it to floating + sticky/pin.
