@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """
-Build script for dkitle (cross-platform).
+Build script for dkitle desktop app packaging.
 
 Usage:
-    python build.py chrome           - Build Chrome extension (.zip)
-    python build.py firefox          - Build Firefox extension (.zip)
-    python build.py all              - Build both extensions (default)
-    python build.py chrome --dev     - Build Chrome as unpacked directory (for debugging)
-    python build.py all --dev        - Build both as unpacked directories
-    python build.py package          - Build Rust app + extensions, create release archive
-    python build.py package --target x86_64-unknown-linux-gnu
+    python build.py package                                    - Build for current platform
+    python build.py package --target x86_64-unknown-linux-gnu  - Build for specific target
 """
 
 import os
@@ -22,30 +17,8 @@ import zipfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
-EXT_DIR = ROOT_DIR / "dkitle-extension"
 APP_DIR = ROOT_DIR / "dkitle-app"
 BUILD_DIR = ROOT_DIR / "build"
-
-EXT_FILES = [
-    "background.js",
-    "popup.html",
-    "popup.js",
-    "icons/icon-16.png",
-    "icons/icon-32.png",
-    "icons/icon-48.png",
-    "icons/icon-128.png",
-    "providers/intercept-base.js",
-    "providers/provider-base.js",
-    "providers/youtube-intercept.js",
-    "providers/youtube.js",
-    "providers/bilibili-intercept.js",
-    "providers/bilibili.js",
-]
-
-TARGETS = {
-    "chrome": {"manifest_src": "manifest.json", "out_name": "dkitle-chrome.zip"},
-    "firefox": {"manifest_src": "manifest.firefox.json", "out_name": "dkitle-firefox.zip"},
-}
 
 # Map target triples to platform info
 TARGET_INFO = {
@@ -86,55 +59,8 @@ def _detect_target() -> str:
         sys.exit(1)
 
 
-def copy_extension_files(target: str, dest: Path) -> None:
-    """Copy manifest and extension files to the destination directory."""
-    cfg = TARGETS[target]
-    if dest.exists():
-        shutil.rmtree(dest)
-    (dest / "providers").mkdir(parents=True)
-    (dest / "icons").mkdir(parents=True)
-
-    # Copy manifest
-    shutil.copy2(EXT_DIR / cfg["manifest_src"], dest / "manifest.json")
-
-    # Copy extension files
-    for f in EXT_FILES:
-        shutil.copy2(EXT_DIR / f, dest / f)
-
-
-def build_zip(target: str) -> None:
-    """Build a .zip package for distribution."""
-    cfg = TARGETS[target]
-    staging = BUILD_DIR / f"staging-{target}"
-
-    copy_extension_files(target, staging)
-
-    # Create zip
-    out_path = BUILD_DIR / cfg["out_name"]
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _dirs, files in os.walk(staging):
-            for fname in sorted(files):
-                full = Path(root) / fname
-                arcname = full.relative_to(staging).as_posix()
-                zf.write(full, arcname)
-
-    # Clean up staging
-    shutil.rmtree(staging)
-
-    print(f"Built: {out_path}")
-
-
-def build_dev(target: str) -> None:
-    """Build an unpacked directory for debugging / direct browser loading."""
-    out_dir = BUILD_DIR / target
-
-    copy_extension_files(target, out_dir)
-
-    print(f"Built: {out_dir}/")
-
-
 def build_package(target_triple: str) -> None:
-    """Build the Rust app and extensions, then create a release archive."""
+    """Build the Rust app and create a release archive."""
     if target_triple not in TARGET_INFO:
         print(f"Unsupported target: {target_triple}", file=sys.stderr)
         print(f"Supported targets: {', '.join(TARGET_INFO.keys())}", file=sys.stderr)
@@ -145,7 +71,15 @@ def build_package(target_triple: str) -> None:
 
     print(f"Building dkitle v{version} for {target_triple}...")
 
-    # 1. Build Rust app
+    # 1. Generate icons
+    print("==> Generating icons...")
+    icon_script = ROOT_DIR / "scripts" / "generate_icons.py"
+    result = subprocess.run([sys.executable, str(icon_script)])
+    if result.returncode != 0:
+        print("Icon generation failed!", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. Build Rust app
     print("==> Building Rust application...")
     cargo_args = ["cargo", "build", "--release", "--target", target_triple]
     result = subprocess.run(cargo_args, cwd=APP_DIR)
@@ -153,14 +87,9 @@ def build_package(target_triple: str) -> None:
         print("Cargo build failed!", file=sys.stderr)
         sys.exit(1)
 
-    # 2. Build browser extensions
-    print("==> Building browser extensions...")
-    for t in TARGETS:
-        build_zip(t)
-
     # 3. Assemble release archive
     print("==> Assembling release archive...")
-    staging = BUILD_DIR / f"staging-package"
+    staging = BUILD_DIR / "staging-package"
     if staging.exists():
         shutil.rmtree(staging)
 
@@ -182,10 +111,6 @@ def build_package(target_triple: str) -> None:
         shutil.copy2(APP_DIR / "assets" / "macos" / "Info.plist", app_dir / "Info.plist")
         shutil.copy2(APP_DIR / "assets" / "macos" / "AppIcon.icns", app_dir / "Resources" / "AppIcon.icns")
 
-        # Copy extension zips alongside .app
-        for t in TARGETS:
-            shutil.copy2(BUILD_DIR / TARGETS[t]["out_name"], staging / TARGETS[t]["out_name"])
-
     elif info["os"] == "linux":
         staging.mkdir(parents=True)
         shutil.copy2(binary_src, staging / info["exe"])
@@ -193,17 +118,9 @@ def build_package(target_triple: str) -> None:
         shutil.copy2(APP_DIR / "assets" / "dkitle.desktop", staging / "dkitle.desktop")
         shutil.copy2(APP_DIR / "assets" / "icon.png", staging / "icon.png")
 
-        # Copy extension zips
-        for t in TARGETS:
-            shutil.copy2(BUILD_DIR / TARGETS[t]["out_name"], staging / TARGETS[t]["out_name"])
-
     elif info["os"] == "windows":
         staging.mkdir(parents=True)
         shutil.copy2(binary_src, staging / info["exe"])
-
-        # Copy extension zips
-        for t in TARGETS:
-            shutil.copy2(BUILD_DIR / TARGETS[t]["out_name"], staging / TARGETS[t]["out_name"])
 
     # 4. Create archive
     if info["archive"] == "tar.gz":
@@ -230,8 +147,6 @@ def build_package(target_triple: str) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    dev_mode = "--dev" in args
-    args = [a for a in args if a != "--dev"]
 
     # Extract --target value
     target_triple = None
@@ -246,7 +161,7 @@ def main() -> None:
             i += 1
     args = filtered_args
 
-    command = args[0] if args else "all"
+    command = args[0] if args else "package"
 
     if command == "package":
         if target_triple is None:
@@ -255,26 +170,9 @@ def main() -> None:
             shutil.rmtree(BUILD_DIR)
         BUILD_DIR.mkdir()
         build_package(target_triple)
-        return
-
-    if command not in ("chrome", "firefox", "all"):
-        print(
-            f"Usage: {sys.argv[0]} {{chrome|firefox|all|package}} [--dev] [--target <triple>]",
-            file=sys.stderr,
-        )
+    else:
+        print(f"Usage: {sys.argv[0]} package [--target <triple>]", file=sys.stderr)
         sys.exit(1)
-
-    if BUILD_DIR.exists():
-        shutil.rmtree(BUILD_DIR)
-    BUILD_DIR.mkdir()
-
-    build_fn = build_dev if dev_mode else build_zip
-    targets = TARGETS if command == "all" else [command]
-
-    for t in targets:
-        build_fn(t)
-
-    print("Done.")
 
 
 if __name__ == "__main__":

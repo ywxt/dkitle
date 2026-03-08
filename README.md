@@ -29,20 +29,13 @@ Once started, the app will:
 - Open a WebSocket server at `ws://localhost:9877/ws`
 - Show a manager window listing all subtitle sources
 
-### 2. Install the Browser Extension
+### 2. Install the Userscript
 
-#### Chrome
+1. Install [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/) in your browser
+2. [Click here to install dkitle.user.js](https://github.com/ywxt/dkitle/raw/main/dkitle.user.js)
+3. Confirm the installation in your userscript manager
 
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable **Developer Mode**
-3. Click **Load unpacked**
-4. Select the `dkitle-extension` directory
-
-#### Firefox (128+)
-
-1. Open Firefox and go to `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on**
-3. Select `dkitle-extension/manifest.firefox.json`
+> Works across all browsers (Chrome, Firefox, Edge, Safari) with no store review required.
 
 ### 3. Use
 
@@ -87,14 +80,13 @@ For other window managers, refer to your WM's documentation and use `app_id` (Wa
 
 ## Building from Source
 
-### Desktop App
-
-#### Requirements
+### Requirements
 
 - **Rust** (latest stable)
+- **Python 3.6+** (for icon generation and packaging, standard library only)
 - Platform-specific dependencies for [iced](https://github.com/iced-rs/iced)
 
-#### Build
+### Build
 
 ```bash
 cd dkitle-app
@@ -109,88 +101,53 @@ cd dkitle-app
 cargo run
 ```
 
-### Browser Extension
-
-#### Requirements
-
-- **Python 3.6+** (standard library only, no third-party packages needed)
-- **Operating System**: Windows, Linux, or macOS
-
-The browser extension is pure JavaScript — no npm, Node.js, or bundler is required.
-
-#### Build
+### Package for Release
 
 ```bash
-# Build the Firefox extension
-python build.py firefox
-# Output: build/dkitle-firefox.zip
+# Generate icons (required before first build)
+python scripts/generate_icons.py
 
-# Build the Chrome extension
-python build.py chrome
-# Output: build/dkitle-chrome.zip
+# Package for current platform
+python build.py package
 
-# Build both at once
-python build.py all
-# Output: build/dkitle-chrome.zip and build/dkitle-firefox.zip
-
-# Development build (uncompressed directory, can be loaded directly)
-python build.py all --dev
-# Output: build/chrome/ and build/firefox/
+# Package for a specific target
+python build.py package --target x86_64-unknown-linux-gnu
 ```
-
-The build script (`build.py`) copies the extension source files and the appropriate manifest (`manifest.firefox.json` for Firefox, `manifest.json` for Chrome) into a zip archive. No compilation, transpilation, or minification is performed — the output zip contains the exact same JavaScript source files as in the repository.
-
-Wrapper scripts are also available: `./build.sh` (Linux/macOS) and `build.bat` (Windows).
 
 ## Project Structure
 
 ```text
 dkitle/
-├── build.py                      # Extension build script (cross-platform, Python 3)
-├── build.sh                      # Linux/macOS wrapper
-├── build.bat                     # Windows wrapper
-├── dkitle-extension/    # Browser extension — extracts subtitles from web pages (Chrome / Firefox)
-│   ├── manifest.json             # Chrome manifest (MV3)
-│   ├── manifest.firefox.json     # Firefox manifest (MV3, Gecko)
-│   ├── background.js             # WebSocket connection management
-│   ├── providers/
-│   │   ├── intercept-base.js      # Shared network interceptor base (MAIN world)
-│   │   ├── provider-base.js       # Shared provider base (ISOLATED world)
-│   │   ├── youtube-intercept.js   # YouTube interceptor
-│   │   ├── youtube.js             # YouTube provider
-│   │   ├── bilibili-intercept.js  # Bilibili interceptor
-│   │   └── bilibili.js            # Bilibili provider
-│   ├── popup.html
-│   └── popup.js
+├── dkitle.user.js           # Userscript — subtitle interception & sync (Tampermonkey/Violentmonkey)
+├── build.py                 # Desktop app packaging script (cross-platform, Python 3)
+├── scripts/
+│   └── generate_icons.py    # Icon generation (PNG, ICO, ICNS)
 │
-└── dkitle-app/           # Rust desktop app — receives and displays subtitles in an overlay
+└── dkitle-app/              # Rust desktop app — receives and displays subtitles in an overlay
     ├── Cargo.toml
+    ├── build.rs
+    ├── assets/
+    │   ├── icon.png
+    │   ├── icon.ico
+    │   ├── dkitle.desktop
+    │   └── macos/
+    │       ├── Info.plist
+    │       └── AppIcon.icns
     └── src/
-        ├── main.rs       # Entry point
-        ├── server.rs     # WebSocket server (port 9877)
-        ├── subtitle.rs   # Subtitle data model
-        └── ui.rs         # iced always-on-top subtitle window
+        ├── main.rs          # Entry point
+        ├── server.rs        # WebSocket server (port 9877)
+        ├── subtitle.rs      # Subtitle data model
+        └── ui.rs            # iced always-on-top subtitle window
 ```
 
-## Provider Architecture
+## Adding New Subtitle Sites
 
-The extension abstracts provider capabilities into two shared layers:
+To add support for a new video site, edit `dkitle.user.js`:
 
-1. **intercept-base (MAIN world)**
-   - Unified hooks for `fetch` and `XMLHttpRequest`
-   - Site-specific interceptors only need to register: URL matching + response parsing logic
-2. **provider-base (ISOLATED world)**
-   - Unified subtitle forwarding, deduplication, and `timeupdate` cue alignment
-   - Built-in DOM observation and polling fallback
-
-Site implementations only contain site-specific logic (selectors, response parsers), making it easy to add support for more websites.
-
-## Adding New Subtitle Sources
-
-Create two new files under `dkitle-extension/providers/`, e.g., `example-intercept.js` and `example.js`:
-
-1. In `example-intercept.js`, call `window.__dkitleRegisterInterceptor(...)`
-2. In `example.js`, call `window.__dkitleCreateProvider(...)`
-3. Register the corresponding site injection order in `manifest.json` and `manifest.firefox.json` under `content_scripts`:
-   - MAIN world: `intercept-base.js` → `example-intercept.js`
-   - ISOLATED world: `provider-base.js` → `example.js`
+1. Add a `@match` rule in the userscript header
+2. Add a new entry to the `SITES` array with:
+   - `name` — site identifier
+   - `urlMatch` — regex to match video page URLs (used for video sync registration)
+   - `interceptUrlTest` — function to match subtitle API URLs
+   - `parseResponse` — function to parse subtitle data into `{ start_ms, end_ms, text }` cues
+3. Add the hostname detection in the `detectSite()` function

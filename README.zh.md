@@ -29,20 +29,13 @@
 - 在 `ws://localhost:9877/ws` 开启 WebSocket 服务器
 - 显示一个管理窗口，列出所有字幕来源
 
-### 2. 安装浏览器扩展
+### 2. 安装油猴脚本
 
-#### Chrome
+1. 在浏览器中安装 [Tampermonkey](https://www.tampermonkey.net/) 或 [Violentmonkey](https://violentmonkey.github.io/)
+2. [点击此处安装 dkitle.user.js](https://github.com/ywxt/dkitle/raw/main/dkitle.user.js)
+3. 在脚本管理器中确认安装
 
-1. 打开 Chrome，访问 `chrome://extensions/`
-2. 启用 **开发者模式**
-3. 点击 **加载已解压的扩展程序**
-4. 选择 `dkitle-extension` 目录
-
-#### Firefox（128+）
-
-1. 打开 Firefox，访问 `about:debugging#/runtime/this-firefox`
-2. 点击 **加载临时附加组件**
-3. 选择 `dkitle-extension/manifest.firefox.json`
+> 油猴脚本支持所有浏览器（Chrome、Firefox、Edge、Safari），无需商店审核。
 
 ### 3. 使用
 
@@ -87,14 +80,13 @@ for_window [class="org.eu.ywxt.dkitle.subtitle"] floating enable, sticky enable
 
 ## 从源码构建
 
-### 桌面应用
-
-#### 系统要求
+### 系统要求
 
 - **Rust**（最新稳定版）
+- **Python 3.6+**（用于图标生成和打包，仅使用标准库）
 - [iced](https://github.com/iced-rs/iced) 所需的平台依赖
 
-#### 构建
+### 构建
 
 ```bash
 cd dkitle-app
@@ -109,88 +101,53 @@ cd dkitle-app
 cargo run
 ```
 
-### 浏览器扩展
-
-#### 系统要求
-
-- **Python 3.6+**（仅使用标准库，无需安装第三方包）
-- **操作系统**：Windows、Linux 或 macOS
-
-浏览器扩展为纯 JavaScript，不需要 npm、Node.js 或任何打包工具。
-
-#### 构建
+### 打包发布
 
 ```bash
-# 构建 Firefox 扩展
-python build.py firefox
-# 输出：build/dkitle-firefox.zip
+# 生成图标（首次构建前需要）
+python scripts/generate_icons.py
 
-# 构建 Chrome 扩展
-python build.py chrome
-# 输出：build/dkitle-chrome.zip
+# 为当前平台打包
+python build.py package
 
-# 同时构建两者
-python build.py all
-# 输出：build/dkitle-chrome.zip 和 build/dkitle-firefox.zip
-
-# 开发构建（输出未压缩目录，可直接在浏览器加载）
-python build.py all --dev
-# 输出：build/chrome/ 和 build/firefox/
+# 为指定目标平台打包
+python build.py package --target x86_64-unknown-linux-gnu
 ```
-
-构建脚本（`build.py`）将扩展源文件和对应的 manifest（Firefox 使用 `manifest.firefox.json`，Chrome 使用 `manifest.json`）打包为 zip 文件。不进行任何编译、转译或压缩 — 输出的 zip 包含与仓库中完全相同的 JavaScript 源文件。
-
-也可使用封装脚本：`./build.sh`（Linux/macOS）和 `build.bat`（Windows）。
 
 ## 项目结构
 
 ```text
 dkitle/
-├── build.py                      # 扩展构建脚本（跨平台，Python 3）
-├── build.sh                      # Linux/macOS wrapper
-├── build.bat                     # Windows wrapper
-├── dkitle-extension/    # 浏览器扩展 - 从网页提取字幕（支持 Chrome / Firefox）
-│   ├── manifest.json             # Chrome manifest (MV3)
-│   ├── manifest.firefox.json     # Firefox manifest (MV3, Gecko)
-│   ├── background.js             # WebSocket 连接管理
-│   ├── providers/
-│   │   ├── intercept-base.js      # 公共网络拦截基础层（MAIN world）
-│   │   ├── provider-base.js       # 公共 provider 基础层（ISOLATED world）
-│   │   ├── youtube-intercept.js   # YouTube 拦截器
-│   │   ├── youtube.js             # YouTube provider
-│   │   ├── bilibili-intercept.js  # Bilibili 拦截器
-│   │   └── bilibili.js            # Bilibili provider
-│   ├── popup.html
-│   └── popup.js
+├── dkitle.user.js           # 油猴脚本 — 字幕拦截与同步（Tampermonkey/Violentmonkey）
+├── build.py                 # 桌面应用打包脚本（跨平台，Python 3）
+├── scripts/
+│   └── generate_icons.py    # 图标生成（PNG、ICO、ICNS）
 │
-└── dkitle-app/           # Rust 桌面应用 - 接收并置顶显示字幕
+└── dkitle-app/              # Rust 桌面应用 — 接收并置顶显示字幕
     ├── Cargo.toml
+    ├── build.rs
+    ├── assets/
+    │   ├── icon.png
+    │   ├── icon.ico
+    │   ├── dkitle.desktop
+    │   └── macos/
+    │       ├── Info.plist
+    │       └── AppIcon.icns
     └── src/
-        ├── main.rs       # 入口
-        ├── server.rs     # WebSocket 服务器（端口 9877）
-        ├── subtitle.rs   # 字幕数据模型
-        └── ui.rs         # iced 置顶字幕窗口
+        ├── main.rs          # 入口
+        ├── server.rs        # WebSocket 服务器（端口 9877）
+        ├── subtitle.rs      # 字幕数据模型
+        └── ui.rs            # iced 置顶字幕窗口
 ```
 
-## Provider 架构说明
+## 添加新的字幕站点
 
-扩展已将 provider 能力抽象为两层公共接口：
+编辑 `dkitle.user.js` 即可添加新站点支持：
 
-1. **intercept-base（MAIN world）**
-   - 统一 hook `fetch` 与 `XMLHttpRequest`
-   - 站点 intercept 仅需注册：URL 匹配 + 响应解析逻辑
-2. **provider-base（ISOLATED world）**
-   - 统一处理字幕发送、去重、`timeupdate` cue 对齐
-   - 内置 DOM 观察与轮询兜底
-
-站点实现只保留差异逻辑（选择器、响应解析器），便于继续扩展更多网站。
-
-## 添加新的字幕来源
-
-在 `dkitle-extension/providers/` 下新增两个文件，例如 `example-intercept.js` 与 `example.js`：
-
-1. 在 `example-intercept.js` 中调用 `window.__dkitleRegisterInterceptor(...)`
-2. 在 `example.js` 中调用 `window.__dkitleCreateProvider(...)`
-3. 在 `manifest.json` 和 `manifest.firefox.json` 的 `content_scripts` 中注册对应站点注入顺序：
-   - MAIN world: `intercept-base.js` → `example-intercept.js`
-   - ISOLATED world: `provider-base.js` → `example.js`
+1. 在脚本头部添加 `@match` 规则
+2. 在 `SITES` 数组中添加新条目：
+   - `name` — 站点标识
+   - `urlMatch` — 匹配视频页面 URL 的正则（用于注册视频同步）
+   - `interceptUrlTest` — 匹配字幕 API URL 的函数
+   - `parseResponse` — 解析字幕数据为 `{ start_ms, end_ms, text }` 格式的函数
+3. 在 `detectSite()` 函数中添加主机名检测

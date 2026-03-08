@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Generate all application and extension icons for dkitle.
+Generate all application icons for dkitle.
 
 Design: transparent background, black rounded-rectangle outline, black "DK" text centered.
 Pure Python — no external dependencies.
 
 Output files:
-  dkitle-extension/icons/icon-{16,32,48,128}.png
   dkitle-app/assets/icon.png          (256x256)
   dkitle-app/assets/icon.ico          (multi-size)
   dkitle-app/assets/macos/AppIcon.icns (multi-size)
@@ -240,18 +239,6 @@ def _encode_icns(png_data_list: list[tuple[int, bytes]]) -> bytes:
 
 def generate_all():
     """Generate all icon files."""
-    # Extension icons
-    ext_icons_dir = ROOT_DIR / "dkitle-extension" / "icons"
-    ext_icons_dir.mkdir(parents=True, exist_ok=True)
-
-    ext_sizes = [16, 32, 48, 128]
-    for s in ext_sizes:
-        img = _render_icon(s)
-        png = _encode_png(img, s, s)
-        out = ext_icons_dir / f"icon-{s}.png"
-        out.write_bytes(png)
-        print(f"Generated: {out}")
-
     # Desktop app icons
     app_assets_dir = ROOT_DIR / "dkitle-app" / "assets"
     app_assets_dir.mkdir(parents=True, exist_ok=True)

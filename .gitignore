@@ -11,8 +11,5 @@ target/
 .DS_Store
 Thumbs.db
 
-# Node
-node_modules/
-
-# Extension build output
+# Build output
 build/
