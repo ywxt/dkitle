@@ -28,9 +28,16 @@ iced = { version = "0.14", default-features = false, features = [
 # Text measurement (same version as iced's transitive dep)
 cosmic-text = "0.15"
 
+# i18n
+rust-i18n = "3"
+sys-locale = "0.3"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async stream utilities (for WebSocket split)
+futures-util = "0.3"
 
 # Tower for HTTP service
 tower-http = { version = "0.6", features = ["cors"] }

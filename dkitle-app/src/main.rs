@@ -7,6 +7,8 @@ mod ui;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 const DEFAULT_PORT: u16 = 9877;
 
 fn main() -> iced::Result {
@@ -22,6 +24,11 @@ fn main() -> iced::Result {
                 .add_directive("iced_wgpu=error".parse().unwrap()),
         )
         .init();
+    // Detect system locale and set i18n language
+    let locale = sys_locale::get_locale().unwrap_or_else(|| "en".to_string());
+    info!("Detected system locale: {}", locale);
+    rust_i18n::set_locale(&locale);
+
     info!("Starting dkitle-app");
     info!("Launching subtitle manager window");
 
@@ -32,14 +39,16 @@ fn main() -> iced::Result {
         || {
             let (subtitle_tx, subtitle_rx) = tokio::sync::mpsc::unbounded_channel();
             let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            let (cmd_tx, _) = tokio::sync::broadcast::channel(16);
+            let cmd_tx_server = cmd_tx.clone();
 
             let port = DEFAULT_PORT;
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-                rt.block_on(server::run_server(port, subtitle_tx, shutdown_rx));
+                rt.block_on(server::run_server(port, subtitle_tx, cmd_tx_server, shutdown_rx));
             });
 
-            ui::SubtitleApp::new(subtitle_rx, shutdown_tx)
+            ui::SubtitleApp::new(subtitle_rx, shutdown_tx, cmd_tx)
         },
         ui::SubtitleApp::update,
         ui::SubtitleApp::view,

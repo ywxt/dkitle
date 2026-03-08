@@ -1,13 +1,15 @@
 use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping};
+use iced::keyboard;
 use iced::theme;
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::window;
-use iced::{Element, Length, Size, Subscription, Task, Theme};
+use iced::{event, Element, Length, Size, Subscription, Task, Theme};
+use rust_i18n::t;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::subtitle::{Provider, SubtitleCue, SubtitleMessage};
+use crate::subtitle::{Provider, ServerCommand, SubtitleCue, SubtitleMessage};
 
 /// Messages for the iced application
 #[derive(Debug, Clone)]
@@ -22,6 +24,10 @@ pub enum Message {
     WindowResized(window::Id, Size),
     /// System theme mode changed (light/dark)
     SystemThemeChanged(theme::Mode),
+    /// Toggle remote video playback for a specific subtitle window
+    ToggleRemotePlayback(window::Id),
+    /// Spacebar pressed in a window — toggle playback if it's a subtitle window
+    SpacePressed(window::Id),
 }
 
 /// Represents a subtitle source (one per browser tab)
@@ -103,6 +109,8 @@ pub struct SubtitleApp {
     subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
     /// Shutdown signal sender for the WebSocket server
     shutdown_tx: tokio::sync::watch::Sender<bool>,
+    /// Broadcast sender for commands to browser clients
+    cmd_tx: tokio::sync::broadcast::Sender<ServerCommand>,
     /// ID of the manager (main) window
     main_window_id: window::Id,
     /// All known subtitle sources: source_id → SubtitleSource
@@ -124,18 +132,20 @@ const MIN_FONT_SIZE: f32 = 10.0;
 const MAX_FONT_SIZE: f32 = 120.0;
 /// Padding on each side of the subtitle window
 const SUBTITLE_PADDING: f32 = 16.0;
-/// Vertical space used by provider label + spacing
-const SUBTITLE_OVERHEAD_HEIGHT: f32 = 30.0;
+/// Vertical space used by status bar + provider label + spacing
+const SUBTITLE_OVERHEAD_HEIGHT: f32 = 56.0;
 
 impl SubtitleApp {
     pub fn new(
         subtitle_rx: tokio::sync::mpsc::UnboundedReceiver<SubtitleMessage>,
         shutdown_tx: tokio::sync::watch::Sender<bool>,
+        cmd_tx: tokio::sync::broadcast::Sender<ServerCommand>,
     ) -> (Self, Task<Message>) {
         let (main_id, open_task) = window::open(manager_window_settings());
         let app = Self {
             subtitle_rx,
             shutdown_tx,
+            cmd_tx,
             main_window_id: main_id,
             sources: HashMap::new(),
             subtitle_windows: HashMap::new(),
@@ -228,6 +238,22 @@ impl SubtitleApp {
 
             Message::SystemThemeChanged(mode) => {
                 self.system_mode = mode;
+            }
+
+            Message::ToggleRemotePlayback(wid) => {
+                if let Some(source_id) = self.subtitle_windows.get(&wid) {
+                    let cmd = ServerCommand::PlayPause {
+                        source_id: source_id.clone(),
+                    };
+                    let _ = self.cmd_tx.send(cmd);
+                }
+            }
+
+            Message::SpacePressed(wid) => {
+                // Only toggle playback for subtitle windows (not the manager)
+                if self.subtitle_windows.contains_key(&wid) {
+                    return self.update(Message::ToggleRemotePlayback(wid));
+                }
             }
         }
         Task::none()
@@ -351,7 +377,7 @@ impl SubtitleApp {
         if self.sources.is_empty() {
             let content = column![
                 title_row,
-                text("Waiting for subtitle sources...")
+                text(t!("waiting_for_sources").to_string())
                     .size(14)
                     .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
             ]
@@ -420,12 +446,16 @@ impl SubtitleApp {
 
             // Status info
             let status = if !source.active {
-                "Inactive".to_string()
+                t!("inactive").to_string()
             } else if source.cues.is_empty() {
-                "No cues".to_string()
+                t!("no_cues").to_string()
             } else {
                 let playing_str = if source.playing { "▶" } else { "⏸" };
-                format!("{} {} cues", playing_str, source.cues.len())
+                format!(
+                    "{} {}",
+                    playing_str,
+                    t!("cue_count", count = source.cues.len())
+                )
             };
 
             // Subtitle text preview (truncated)
@@ -444,14 +474,14 @@ impl SubtitleApp {
             // Open / Opened / Inactive / No Subtitles button
             let btn = if !source.active {
                 // Inactive source: disabled button
-                button(text("Inactive").size(11))
+                button(text(t!("inactive").to_string()).size(11))
             } else if source.cues.is_empty() {
                 // No subtitles captured: disabled button
-                button(text("No Subtitles").size(11))
+                button(text(t!("no_subtitles").to_string()).size(11))
             } else if is_open {
-                button(text("Opened").size(11))
+                button(text(t!("opened").to_string()).size(11))
             } else {
-                button(text("Open").size(11))
+                button(text(t!("open").to_string()).size(11))
                     .on_press(Message::OpenSubtitleWindow(source_id.clone()))
             };
 
@@ -470,7 +500,7 @@ impl SubtitleApp {
 
         let content = column![
             title_row,
-            text(format!("{} source(s)", self.sources.len()))
+            text(t!("source_count", count = self.sources.len()).to_string())
                 .size(12)
                 .color(iced::Color::from_rgb(0.5, 0.5, 0.5)),
             scrollable(list).height(Length::Fill),
@@ -485,9 +515,10 @@ impl SubtitleApp {
     }
 
     /// Subtitle overlay window: shows subtitles for one specific source.
-    /// Font size is determined entirely by window size.
+    /// Layout: status bar (top) → provider title → subtitle text (center).
     fn view_subtitle(&self, window_id: window::Id) -> Element<'_, Message> {
-        let (provider_str, subtitle_str) =
+        // Extract source info
+        let (provider_str, subtitle_str, is_connected, playing): (String, String, bool, bool) =
             if let Some(source_id) = self.subtitle_windows.get(&window_id) {
                 if let Some(source) = self.sources.get(source_id) {
                     let label = if source.tab_title.is_empty() {
@@ -495,12 +526,17 @@ impl SubtitleApp {
                     } else {
                         format!("📺 {} — {}", source.provider, source.tab_title)
                     };
-                    (label, source.current_text.as_str())
+                    (
+                        label,
+                        source.current_text.clone(),
+                        source.active,
+                        source.playing,
+                    )
                 } else {
-                    (String::from("📺"), "Waiting...")
+                    (String::from("📺"), t!("waiting").to_string(), false, false)
                 }
             } else {
-                (String::from("📺"), "Waiting...")
+                (String::from("📺"), t!("waiting").to_string(), false, false)
             };
 
         let window_size = self
@@ -510,18 +546,65 @@ impl SubtitleApp {
             .unwrap_or(Size::new(DEFAULT_SUBTITLE_WIDTH, DEFAULT_SUBTITLE_HEIGHT));
 
         // Compute font size using cosmic-text for accurate measurement
-        let effective_font_size = auto_font_size(subtitle_str, &window_size, &self.font_system);
+        let effective_font_size = auto_font_size(&subtitle_str, &window_size, &self.font_system);
 
+        // ── Status bar (top row) ───────────────────────
+        // Left: connection status indicator
+        let connection_indicator = if is_connected {
+            let status_text = format!("🟢 {}", t!("connected"));
+            text(status_text)
+                .size(11)
+                .color(iced::Color::from_rgb(0.4, 0.9, 0.4))
+        } else {
+            let status_text = format!("🔴 {}", t!("disconnected"));
+            text(status_text)
+                .size(11)
+                .color(iced::Color::from_rgb(0.9, 0.4, 0.4))
+        };
+
+        // Playing status
+        let play_status = if playing {
+            text("▶")
+                .size(11)
+                .color(iced::Color::from_rgb(0.4, 0.9, 0.4))
+        } else {
+            text("⏸")
+                .size(11)
+                .color(iced::Color::from_rgb(0.7, 0.7, 0.7))
+        };
+
+        // Right: play/pause button (controls remote video)
+        let play_pause_btn_label = if playing {
+            t!("pause_subtitle").to_string()
+        } else {
+            t!("resume_subtitle").to_string()
+        };
+        let play_pause_btn = button(text(play_pause_btn_label).size(11))
+            .on_press(Message::ToggleRemotePlayback(window_id))
+            .padding([2, 8]);
+
+        let status_bar = row![
+            connection_indicator,
+            play_status,
+            container(text("")).width(Length::Fill), // spacer
+            play_pause_btn,
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .width(Length::Fill);
+
+        // ── Provider title ─────────────────────────────
         let provider_label = text(provider_str)
             .size(12)
             .color(iced::Color::from_rgb(0.6, 0.6, 0.6));
 
-        let subtitle_text = text(subtitle_str)
+        // ── Subtitle text ──────────────────────────────
+        let subtitle_text = text(subtitle_str.clone())
             .size(effective_font_size)
             .line_height(1.2)
             .color(iced::Color::WHITE);
 
-        let content = column![provider_label, subtitle_text]
+        let content = column![status_bar, provider_label, subtitle_text]
             .spacing(4)
             .align_x(iced::Alignment::Center);
 
@@ -546,8 +629,23 @@ impl SubtitleApp {
         // High-frequency tick for smooth subtitle updates (~60fps)
         let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
 
+        // Listen for Space key press with window ID
+        let space_key = event::listen_with(|event, status, window_id| {
+            if status == event::Status::Ignored {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Space),
+                    ..
+                }) = event
+                {
+                    return Some(Message::SpacePressed(window_id));
+                }
+            }
+            None
+        });
+
         Subscription::batch([
             tick,
+            space_key,
             window::close_events().map(Message::WindowClosed),
             window::resize_events().map(|(id, size)| Message::WindowResized(id, size)),
             iced::system::theme_changes().map(Message::SystemThemeChanged),
