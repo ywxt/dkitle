@@ -98,7 +98,7 @@ def build_package(target_triple: str) -> None:
         print(f"Binary not found: {binary_src}", file=sys.stderr)
         sys.exit(1)
 
-    archive_name = f"dkitle-{version}-{info['os']}-{info['arch']}"
+    archive_name = f"dkitle-{info['os']}-{info['arch']}"
 
     if info["os"] == "macos":
         # Create .app bundle
