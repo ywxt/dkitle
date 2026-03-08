@@ -194,7 +194,7 @@
 
   // ── Drag state ──
   const DRAG_THRESHOLD = 5;
-  const STORAGE_KEY = "dkitle_panel_pos";
+  const STORAGE_KEY = `dkitle_panel_pos_${currentSite.name}`;
   let savedPos = null; // { right, bottom }
 
   function loadPos() {
@@ -253,7 +253,7 @@
       const size = opts.getSize();
       const clamped = clampPos(
         startRight - dx,
-        startBottom + dy,
+        startBottom - dy,
         size.width,
         size.height
       );
