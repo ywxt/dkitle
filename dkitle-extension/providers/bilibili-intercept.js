@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  const SUBTITLE_PATTERN = /subtitle|bcc\.bilibili\.com|\.json(\?|$)/i;
+  const SUBTITLE_PATTERN = /bcc\.bilibili\.com|aisubtitle\.hdslb\.com/i;
 
   function normalizeCue(startSec, endSec, text) {
     const clean = (text || "").trim();
@@ -50,7 +50,7 @@
     if (typeof window.__dkitleRegisterInterceptor === "function") {
       window.__dkitleRegisterInterceptor({
         name: "bilibili",
-        urlTest: (url) => SUBTITLE_PATTERN.test(url) && url.includes("bilibili"),
+        urlTest: (url) => SUBTITLE_PATTERN.test(url),
         parseResponse: parseBilibiliSubtitle,
       });
       console.log("[dkitle] bilibili subtitle interceptor registered");
