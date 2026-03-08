@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Commands sent from the app to browser clients via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ServerCommand {
+    /// Toggle play/pause on the video matching the given source_id.
+    PlayPause { source_id: String },
+}
+
 /// Supported subtitle providers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

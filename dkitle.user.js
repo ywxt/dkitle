@@ -211,6 +211,7 @@
     constructor(config, onStateChange) {
       this._config = config;
       this._onStateChange = onStateChange;
+      this._onCommand = null; // callback for server → browser commands
 
       this._ws = null;
       this._connected = false;
@@ -221,6 +222,8 @@
 
       this._cache = { register: null, cues: null, sync: null };
     }
+
+    set onCommand(fn) { this._onCommand = fn; }
 
     get connected() { return this._connected; }
     get retryStopped() { return this._retryStopped; }
@@ -271,6 +274,15 @@
           this._ws = null;
           this._scheduleReconnect();
           this._notify();
+        };
+
+        this._ws.onmessage = (event) => {
+          try {
+            const cmd = JSON.parse(event.data);
+            if (this._onCommand) this._onCommand(cmd);
+          } catch (e) {
+            console.warn("[dkitle] Failed to parse server command:", e);
+          }
         };
 
         this._ws.onerror = () => this._ws?.close();
@@ -357,6 +369,7 @@
 
     get cueCount() { return this._cueCount; }
     get videoBound() { return this._videoBound; }
+    get videoEl() { return this._videoEl; }
 
     hookFetch() {
       const self = this;
@@ -825,6 +838,21 @@
   const conn = new ConnectionManager(CONFIG, notifyUI);
   const sync = new SubtitleSync(SITE, SOURCE_ID, conn, notifyUI);
   panel = new StatusPanel(SITE.name, conn, sync);
+
+  // Handle commands from the dkitle-app (server → browser)
+  conn.onCommand = (cmd) => {
+    if (cmd.type === "play_pause" && cmd.source_id === SOURCE_ID) {
+      const video = sync.videoEl;
+      if (video) {
+        if (video.paused) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+        console.log(`[dkitle] Remote play/pause toggled → ${video.paused ? "paused" : "playing"}`);
+      }
+    }
+  };
 
   console.log(`[dkitle] Userscript loaded for ${SITE.name}`);
   sync.hookFetch();
