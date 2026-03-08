@@ -1,8 +1,9 @@
 use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping};
+use iced::keyboard;
 use iced::theme;
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::window;
-use iced::{Element, Length, Size, Subscription, Task, Theme};
+use iced::{event, Element, Length, Size, Subscription, Task, Theme};
 use rust_i18n::t;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -25,6 +26,8 @@ pub enum Message {
     SystemThemeChanged(theme::Mode),
     /// Toggle remote video playback for a specific subtitle window
     ToggleRemotePlayback(window::Id),
+    /// Spacebar pressed in a window — toggle playback if it's a subtitle window
+    SpacePressed(window::Id),
 }
 
 /// Represents a subtitle source (one per browser tab)
@@ -45,8 +48,6 @@ struct SubtitleSource {
     current_text: String,
     /// Whether this source is still active (false after tab close/refresh)
     active: bool,
-    /// Last time we received a sync message from this source
-    last_sync_time: Instant,
 }
 
 impl SubtitleSource {
@@ -80,11 +81,6 @@ impl SubtitleSource {
             // After the very last cue — nothing to show
             None
         }
-    }
-
-    /// Check if the source is considered "connected" (received sync within last 5 seconds)
-    fn is_connected(&self) -> bool {
-        self.active && self.last_sync_time.elapsed() < Duration::from_secs(5)
     }
 
     /// Update the current displayed text based on estimated time.
@@ -252,6 +248,13 @@ impl SubtitleApp {
                     let _ = self.cmd_tx.send(cmd);
                 }
             }
+
+            Message::SpacePressed(wid) => {
+                // Only toggle playback for subtitle windows (not the manager)
+                if self.subtitle_windows.contains_key(&wid) {
+                    return self.update(Message::ToggleRemotePlayback(wid));
+                }
+            }
         }
         Task::none()
     }
@@ -276,7 +279,6 @@ impl SubtitleApp {
                         playback_rate: 1.0,
                         current_text: String::new(),
                         active: true,
-                        last_sync_time: Instant::now(),
                     });
                 source.provider = provider;
                 source.active = true;
@@ -306,7 +308,6 @@ impl SubtitleApp {
                         playback_rate: 1.0,
                         current_text: String::new(),
                         active: true,
-                        last_sync_time: Instant::now(),
                     });
                 source.cues = cues;
                 source.provider = provider;
@@ -343,7 +344,6 @@ impl SubtitleApp {
                     source.sync_instant = Instant::now();
                     source.playing = playing;
                     source.playback_rate = playback_rate;
-                    source.last_sync_time = Instant::now();
 
                     // Immediately update displayed text on sync
                     source.update_current_text();
@@ -451,7 +451,11 @@ impl SubtitleApp {
                 t!("no_cues").to_string()
             } else {
                 let playing_str = if source.playing { "▶" } else { "⏸" };
-                format!("{} {}", playing_str, t!("cue_count", count = source.cues.len()))
+                format!(
+                    "{} {}",
+                    playing_str,
+                    t!("cue_count", count = source.cues.len())
+                )
             };
 
             // Subtitle text preview (truncated)
@@ -525,7 +529,7 @@ impl SubtitleApp {
                     (
                         label,
                         source.current_text.clone(),
-                        source.is_connected(),
+                        source.active,
                         source.playing,
                     )
                 } else {
@@ -560,9 +564,13 @@ impl SubtitleApp {
 
         // Playing status
         let play_status = if playing {
-            text("▶").size(11).color(iced::Color::from_rgb(0.4, 0.9, 0.4))
+            text("▶")
+                .size(11)
+                .color(iced::Color::from_rgb(0.4, 0.9, 0.4))
         } else {
-            text("⏸").size(11).color(iced::Color::from_rgb(0.7, 0.7, 0.7))
+            text("⏸")
+                .size(11)
+                .color(iced::Color::from_rgb(0.7, 0.7, 0.7))
         };
 
         // Right: play/pause button (controls remote video)
@@ -621,8 +629,23 @@ impl SubtitleApp {
         // High-frequency tick for smooth subtitle updates (~60fps)
         let tick = iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
 
+        // Listen for Space key press with window ID
+        let space_key = event::listen_with(|event, status, window_id| {
+            if status == event::Status::Ignored {
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Space),
+                    ..
+                }) = event
+                {
+                    return Some(Message::SpacePressed(window_id));
+                }
+            }
+            None
+        });
+
         Subscription::batch([
             tick,
+            space_key,
             window::close_events().map(Message::WindowClosed),
             window::resize_events().map(|(id, size)| Message::WindowResized(id, size)),
             iced::system::theme_changes().map(Message::SystemThemeChanged),
