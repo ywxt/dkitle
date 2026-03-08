@@ -8,6 +8,16 @@ Sync video subtitles from your browser to an always-on-top desktop overlay windo
 
 **Supported Platforms:** Windows, Linux (X11/Wayland), macOS
 
+## Screenshots
+
+|            Main Window             |             Chrome Extension              |
+| :--------------------------------: | :---------------------------------------: |
+| ![Main Window](imgs/main-view.png) | ![Chrome Extension](imgs/chrome-view.png) |
+
+|           YouTube Subtitles            |               Bilibili Video               |                 Bilibili Subtitles                 |
+| :------------------------------------: | :----------------------------------------: | :------------------------------------------------: |
+| ![YouTube](imgs/youtube-main-view.png) | ![Bilibili Video](imgs/bilibili-video.png) | ![Bilibili Subtitles](imgs/bilibili-subtitles.png) |
+
 ## Usage
 
 ### 1. Start the Desktop App

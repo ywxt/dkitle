@@ -8,6 +8,16 @@
 
 **支持平台：** Windows、Linux（X11/Wayland）、macOS
 
+## 截图
+
+|            主窗口             |             Chrome 扩展              |
+| :---------------------------: | :----------------------------------: |
+| ![主窗口](imgs/main-view.png) | ![Chrome 扩展](imgs/chrome-view.png) |
+
+|            YouTube 字幕同步            |               Bilibili 视频               |               Bilibili 字幕同步               |
+| :------------------------------------: | :---------------------------------------: | :-------------------------------------------: |
+| ![YouTube](imgs/youtube-main-view.png) | ![Bilibili 视频](imgs/bilibili-video.png) | ![Bilibili 字幕](imgs/bilibili-subtitles.png) |
+
 ## 使用方法
 
 ### 1. 启动桌面应用
