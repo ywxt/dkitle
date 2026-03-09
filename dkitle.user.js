@@ -9,7 +9,7 @@
 // @name:es      dkitle - Sincronización de subtítulos
 // @name:ru      dkitle - Синхронизация субтитров
 // @namespace    https://github.com/ywxt/dkitle
-// @version      1.2.0
+// @version      1.3.0
 // @description  Sync video subtitles from YouTube/Bilibili to the dkitle desktop overlay app
 // @description:zh-CN 将 YouTube/Bilibili 视频字幕同步到 dkitle 桌面置顶窗口
 // @description:zh-TW 將 YouTube/Bilibili 視頻字幕同步到 dkitle 桌面置頂視窗
@@ -23,7 +23,8 @@
 // @match        *://*.youtube.com/*
 // @match        *://*.bilibili.com/*
 // @connect      127.0.0.1
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        GM_addElement
 // @run-at       document-start
 // @homepageURL  https://github.com/ywxt/dkitle
 // @supportURL   https://github.com/ywxt/dkitle/issues
@@ -243,14 +244,27 @@
 
     async connect() {
       if (this._ws?.readyState === WebSocket.OPEN ||
-          this._ws?.readyState === WebSocket.CONNECTING) return;
+        this._ws?.readyState === WebSocket.CONNECTING) return;
 
       this._notify();
 
-      try {
-        const resp = await fetch(this._config.healthUrl, { method: "GET" });
-        if (!resp.ok) throw new Error();
-      } catch {
+      // Use GM_xmlhttpRequest to bypass CORS/Private Network Access restrictions
+      const healthOk = await new Promise((resolve) => {
+        try {
+          GM_xmlhttpRequest({
+            method: "GET",
+            url: this._config.healthUrl,
+            timeout: 5000,
+            onload: (resp) => resolve(resp.status >= 200 && resp.status < 300),
+            onerror: () => resolve(false),
+            ontimeout: () => resolve(false),
+          });
+        } catch {
+          resolve(false);
+        }
+      });
+
+      if (!healthOk) {
         this._scheduleReconnect();
         return;
       }
@@ -372,44 +386,77 @@
     get videoEl() { return this._videoEl; }
 
     hookFetch() {
-      const self = this;
-      const originalFetch = window.fetch;
-      window.fetch = async function (...args) {
-        const response = await originalFetch.apply(this, args);
-        const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-        if (self._site.interceptUrlTest(url)) {
-          response.clone().json()
-            .then((data) => {
-              const cues = self._site.parseResponse(data);
-              if (cues?.length > 0) self._onCues(cues);
-            })
-            .catch(() => {});
-        }
-        return response;
-      };
+      // Inject fetch/XHR hooks via GM_addElement to run in page's native context,
+      // bypassing Tampermonkey sandbox and Trusted Types CSP restrictions
+      this._injectNetworkHooks();
     }
 
-    hookXHR() {
+    _injectNetworkHooks() {
       const self = this;
-      const origOpen = XMLHttpRequest.prototype.open;
-      const origSend = XMLHttpRequest.prototype.send;
 
-      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-        this._dkitleUrl = typeof url === "string" ? url : String(url);
-        return origOpen.call(this, method, url, ...rest);
-      };
+      // Listen for intercepted data from the injected page-context script
+      window.addEventListener("dkitle-intercepted-response", (e) => {
+        try {
+          const { _, data } = e.detail;
+          const cues = self._site.parseResponse(data);
+          if (cues?.length > 0) self._onCues(cues);
+        } catch { }
+      });
 
-      XMLHttpRequest.prototype.send = function (...args) {
-        if (this._dkitleUrl && self._site.interceptUrlTest(this._dkitleUrl)) {
-          this.addEventListener("load", function () {
-            try {
-              const cues = self._site.parseResponse(JSON.parse(this.responseText));
-              if (cues?.length > 0) self._onCues(cues);
-            } catch {}
-          });
+      // Serialize the site's interceptUrlTest function for injection into page context
+      const interceptTestStr = this._site.interceptUrlTest.toString();
+
+      // Inject a <script> that runs in the page's own JS context
+      const scriptContent = `(function() {
+        var interceptTest = ${interceptTestStr};
+
+        function dispatchCues(url, data) {
+          try {
+            window.dispatchEvent(new CustomEvent("dkitle-intercepted-response", {
+              detail: { url: url, data: data }
+            }));
+          } catch(e) {}
         }
-        return origSend.apply(this, args);
-      };
+
+        // Hook fetch
+        var origFetch = window.fetch;
+        window.fetch = function() {
+          var args = arguments;
+          return origFetch.apply(this, args).then(function(response) {
+            var url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+            if (interceptTest(url)) {
+              response.clone().json().then(function(data) {
+                dispatchCues(url, data);
+              }).catch(function() {});
+            }
+            return response;
+          });
+        };
+
+        // Hook XHR
+        var origOpen = XMLHttpRequest.prototype.open;
+        var origSend = XMLHttpRequest.prototype.send;
+
+        XMLHttpRequest.prototype.open = function(method, url) {
+          this._dkitleUrl = typeof url === "string" ? url : String(url);
+          return origOpen.apply(this, arguments);
+        };
+
+        XMLHttpRequest.prototype.send = function() {
+          var self = this;
+          if (self._dkitleUrl && interceptTest(self._dkitleUrl)) {
+            self.addEventListener("load", function() {
+              try {
+                dispatchCues(self._dkitleUrl, JSON.parse(self.responseText));
+              } catch(e) {}
+            });
+          }
+          return origSend.apply(this, arguments);
+        };
+      })();`;
+
+      // Use GM_addElement to bypass Trusted Types CSP restrictions on YouTube
+      GM_addElement("script", { textContent: scriptContent });
     }
 
     startVideoSync() {
@@ -585,11 +632,11 @@
       try {
         const raw = localStorage.getItem(this._storageKey);
         if (raw) this._pos = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
 
     _savePos() {
-      try { localStorage.setItem(this._storageKey, JSON.stringify(this._pos)); } catch {}
+      try { localStorage.setItem(this._storageKey, JSON.stringify(this._pos)); } catch { }
     }
 
     _applyPos(el) {
@@ -629,7 +676,7 @@
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         if (!moved && Math.abs(dx) < StatusPanel.DRAG_THRESHOLD &&
-            Math.abs(dy) < StatusPanel.DRAG_THRESHOLD) return;
+          Math.abs(dy) < StatusPanel.DRAG_THRESHOLD) return;
         moved = true;
         const size = getSize();
         const c = this._clamp(startRight - dx, startBottom - dy, size.width, size.height);
@@ -845,7 +892,7 @@
       const video = sync.videoEl;
       if (video) {
         if (video.paused) {
-          video.play().catch(() => {});
+          video.play().catch(() => { });
         } else {
           video.pause();
         }
@@ -856,7 +903,6 @@
 
   console.log(`[dkitle] Userscript loaded for ${SITE.name}`);
   sync.hookFetch();
-  sync.hookXHR();
   conn.connect();
   sync.startVideoSync();
 

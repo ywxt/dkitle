@@ -1,6 +1,8 @@
 use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::IntoResponse,
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Request},
+    http::HeaderValue,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
@@ -27,7 +29,8 @@ pub async fn run_server(
             "/ws",
             get(move |ws| ws_handler(ws, subtitle_tx, cmd_tx)),
         )
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(private_network_access));
 
     let addr = format!("127.0.0.1:{}", port);
     info!("dkitle server listening on {}", addr);
@@ -172,6 +175,19 @@ async fn handle_socket(
     }
 
     info!("WebSocket connection closed");
+}
+
+/// Middleware that adds the `Access-Control-Allow-Private-Network` header
+/// to all responses. This is required by Chromium-based browsers (Chrome/Edge)
+/// when a public website (e.g. youtube.com) makes requests to a loopback
+/// address (127.0.0.1) — known as Private Network Access (PNA / CORS-RFC1918).
+async fn private_network_access(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        "Access-Control-Allow-Private-Network",
+        HeaderValue::from_static("true"),
+    );
+    response
 }
 
 async fn health_handler() -> &'static str {
